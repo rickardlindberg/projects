@@ -18,7 +18,7 @@ This is an attempt to build my ideal code hosting platform.
 
 5. The reply is processed by the system and is added to the conversation.
 
-6. Everyone that watches the conversation `timeline+<id>` is send an email
+6. Everyone that watches the conversation `timeline+<id>` is sent an email
    update about the reply in the conversation.
 
 ```
