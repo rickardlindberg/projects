@@ -22,9 +22,13 @@ This is an attempt to build my ideal code hosting platform.
    update about the reply in the conversation.
 
 ```
-                        +-----------------------+
-                        |                       |
-    incoming emails --> | code hosting platform | -> outgoing emails
-                        |                       |
-                        +-----------------------+
+                    +-----------------------+
+                    |                       |
+incoming emails --> | code hosting platform | -> outgoing emails
+                    |                       |
+                    +-----------------------+
 ```
+
+Limitations:
+
+* Incoming emails can be added manually
