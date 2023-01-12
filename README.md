@@ -24,7 +24,7 @@ This is an attempt to build my ideal code hosting platform.
 ```
                     +-----------------------+
                     |                       |
-incoming emails --> | code hosting platform | -> outgoing emails
+incoming emails --> | code hosting platform | --> outgoing emails
                     |                       |
                     +-----------------------+
 ```
@@ -32,3 +32,5 @@ incoming emails --> | code hosting platform | -> outgoing emails
 Limitations:
 
 * Incoming emails can be added manually
+* Projects can be created manually
+* Watchers can be added manually
