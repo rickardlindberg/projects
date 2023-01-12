@@ -21,9 +21,10 @@ This is an attempt to build my ideal code hosting platform.
 6. Everyone that watches the conversation `timeline+<id>` is send an email
    update about the reply in the conversation.
 
-
+```
                         +-----------------------+
                         |                       |
     incoming emails --> | code hosting platform | -> outgoing emails
                         |                       |
                         +-----------------------+
+```
