@@ -31,6 +31,8 @@ incoming emails --> | code hosting platform | --> outgoing emails
 
 Limitations:
 
+* No web UI
+* Just a new kind of mailing list
 * Incoming emails can be added manually
 * Projects can be created manually
 * Watchers can be added manually
