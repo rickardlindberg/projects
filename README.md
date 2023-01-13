@@ -27,6 +27,15 @@ This is an attempt to build my ideal code hosting platform.
 incoming emails --> | code hosting platform | --> outgoing emails
                     |                       |
                     +-----------------------+
+                               | ^
+                               | |
+                               V |
+                    +-----------------------+
+                    |       database        |
+                    |                       |
+                    | * projects            |
+                    | * conversations       |
+                    +-----------------------+
 ```
 
 Limitations:
