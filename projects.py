@@ -103,7 +103,7 @@ class EmailProcessor:
     >>> processor.process(Email.create_test_instance(from_address="non_existing_project@projects.rickardlindberg.me"))
     Traceback (most recent call last):
         ...
-    projects.ConversationNotFound: non_existing_project
+    projects.ProjectNotFound: non_existing_project
     """
 
     @staticmethod
@@ -117,9 +117,27 @@ class EmailProcessor:
         self.db = Database(self.filesystem)
 
     def process(self, email):
-        if not self.db.project_exists(email.get_user()):
-            raise ConversationNotFound(f"{email.get_user()}")
+        action = email_to_action(email)
+        return getattr(self, action["name"])(**action["args"])
+
+    def project_new_conversation(self, project):
+        if not self.db.project_exists(project):
+            raise ProjectNotFound(project)
         print("Conversation created")
+
+def email_to_action(email):
+    """
+    >>> email_to_action(Email.create_test_instance(
+    ...     from_address="test@projects.rickardlindberg.me"
+    ... ))
+    {'name': 'project_new_conversation', 'args': {'project': 'test'}}
+    """
+    return {
+        "name": "project_new_conversation",
+        "args": {
+            "project": email.get_user(),
+        },
+    }
 
 class Database:
 
@@ -133,7 +151,7 @@ class Database:
     def project_exists(self, name):
         return self.filesystem.exists(self.get_project_path(name))
 
-class ConversationNotFound(ValueError):
+class ProjectNotFound(ValueError):
     pass
 
 class Email:
