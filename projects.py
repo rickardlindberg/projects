@@ -26,7 +26,7 @@ class ProjectsApp:
     ...         from_address="timeline@projects.rickardlindberg.me"
     ...     ).render(),
     ...     filesystem={
-    ...         Database.get_project_path("timeline"): "{}",
+    ...         "projects/timeline.json": "{}",
     ...     }
     ... )
     >>> len(json.loads(filesystem.read("projects/timeline.json"))["conversations"])
@@ -84,13 +84,14 @@ class ProjectsApp:
         self.stdin = stdin
         self.filesystem = filesystem
         self.uuid = uuid
+        self.database = Database(
+            filesystem=self.filesystem,
+            uuid=self.uuid
+        )
 
     def run(self):
         if self.args.get() == ["process_email"]:
-            return EmailProcessor(
-                self.filesystem,
-                self.uuid
-            ).process(self.stdin.read())
+            return EmailProcessor(self.database).process(self.stdin.read())
         else:
             sys.exit(f"Unknown command {self.args.get()}")
 
@@ -98,24 +99,24 @@ class EmailProcessor:
 
     @staticmethod
     def create_test_instance():
-        filesystem = Filesystem.create_null()
-        processor = EmailProcessor(filesystem, uuid=UUID.create_null())
-        return filesystem, processor
+        database = Database(
+            filesystem=Filesystem.create_null(),
+            uuid=UUID.create_null()
+        )
+        processor = EmailProcessor(database)
+        return database, processor
 
-    def __init__(self, filesystem, uuid):
-        self.db = Database(filesystem, uuid)
+    def __init__(self, database):
+        self.db = database
 
     def process(self, raw_email):
         """
         I create a new conversation in a project:
 
-        >>> filesystem, processor = EmailProcessor.create_test_instance()
-        >>> filesystem.write("projects/timeline.json", json.dumps({
-        ...     "watchers": [
-        ...         "watcher1@example.com",
-        ...         "watcher2@example.com",
-        ...     ]
-        ... }))
+        >>> database, processor = EmailProcessor.create_test_instance()
+        >>> database.create_project("timeline")
+        >>> database.watch_project("timeline", "watcher1@example.com")
+        >>> database.watch_project("timeline", "watcher2@example.com")
 
         >>> raw_email = Email.create_test_instance(
         ...     from_address="timeline@projects.rickardlindberg.me",
@@ -125,13 +126,13 @@ class EmailProcessor:
         watcher1@example.com
         watcher2@example.com
 
-        >>> json.loads(filesystem.read("projects/timeline.json"))["conversations"]
+        >>> database.get_project("timeline")["conversations"]
         [{'id': 'uuid2'}]
 
-        >>> filesystem.read("projects/timeline/conversations/uuid2.json")
-        '{"subject": "Hello World!", "entries": [{"id": "uuid1"}]}'
+        >>> database.get_conversation("timeline", "uuid2")
+        {'subject': 'Hello World!', 'entries': [{'id': 'uuid1'}]}
 
-        >>> json.loads(filesystem.read("projects/timeline/conversations/entries/uuid1.json"))["source_email"] == raw_email
+        >>> database.get_conversation_entry("timeline", "uuid1")["source_email"] == raw_email
         True
 
         If the project does not exists, I fail:
@@ -157,33 +158,32 @@ class Database:
         self.filesystem = filesystem
         self.store = JsonStore(filesystem, uuid)
 
-    @staticmethod
-    def get_project_path(name):
-        return f"projects/{name}.json"
+    def get_project(self, name):
+        return self.store.load(f"projects/{name}.json")
 
-    @staticmethod
-    def get_conversations_path(project_name):
-        return f"projects/{project_name}/conversations/"
-
-    @staticmethod
-    def get_conversations_entries_path(project_name):
-        return f"projects/{project_name}/conversations/entries/"
+    def create_project(self, name):
+        self.filesystem.write(f"projects/{name}.json", "{}")
 
     def project_exists(self, name):
-        return self.filesystem.exists(self.get_project_path(name))
+        return self.filesystem.exists(f"projects/{name}.json")
+
+    def watch_project(self, name, email):
+        self.store.append(f"projects/{name}.json", "watchers", email)
 
     def get_project_watchers(self, name):
-        project = self.store.load(self.get_project_path(name))
-        return project.get("watchers", [])
+        return self.store.load(f"projects/{name}.json").get("watchers", [])
+
+    def get_conversation(self, name, conversation_id):
+        return self.store.load(f"projects/{name}/conversations/{conversation_id}.json")
 
     def create_conversation(self, project, subject, raw_email):
         conversation_id = self.store.create(
-            self.get_conversations_path(project),
+            f"projects/{project}/conversations/",
             {
                 "subject": subject,
                 "entries": [{
                     "id": self.store.create(
-                        self.get_conversations_entries_path(project),
+                        f"projects/{project}/conversations/entries/",
                         {
                             "source_email": raw_email,
                         }
@@ -192,10 +192,13 @@ class Database:
             }
         )
         self.store.append(
-            self.get_project_path(project),
+            f"projects/{project}.json",
             "conversations",
             {"id": conversation_id}
         )
+
+    def get_conversation_entry(self, project_name, entry_id):
+        return self.store.load(f"projects/{project_name}/conversations/entries/{entry_id}.json")
 
 class JsonStore:
 
@@ -213,8 +216,9 @@ class JsonStore:
         x[key].append(item)
         self.filesystem.write(path, json.dumps(x))
 
-    def create(self, path, data):
-        object_id = self.uuid.get()
+    def create(self, path, data, object_id=None):
+        if object_id is None:
+            object_id = self.uuid.get()
         self.filesystem.write(
             os.path.join(path, f"{object_id}.json"),
             json.dumps(data)
