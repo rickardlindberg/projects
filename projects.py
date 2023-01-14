@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import uuid
 
 class ProjectsApp:
 
@@ -60,7 +61,8 @@ class ProjectsApp:
         return ProjectsApp(
             args=Args.create(),
             stdin=Stdin.create(),
-            filesystem=Filesystem.create()
+            filesystem=Filesystem.create(),
+            uuid=UUID.create(),
         )
 
     @staticmethod
@@ -71,20 +73,22 @@ class ProjectsApp:
         app = ProjectsApp(
             args=Args.create_null(args),
             stdin=Stdin.create_null(stdin),
-            filesystem=fs_wrapper
+            filesystem=fs_wrapper,
+            uuid=UUID.create_null(),
         )
         app.run()
         return fs_wrapper
 
-    def __init__(self, args, stdin, filesystem):
+    def __init__(self, args, stdin, filesystem, uuid):
         self.args = args
         self.stdin = stdin
         self.filesystem = filesystem
+        self.uuid = uuid
 
     def run(self):
         if self.args.get() == ["process_email"]:
             action = email_to_action(Email.parse(self.stdin.read()))
-            return getattr(EmailProcessor(self.filesystem), action["name"])(**action["args"])
+            return getattr(EmailProcessor(self.filesystem, self.uuid), action["name"])(**action["args"])
         else:
             sys.exit(f"Unknown command {self.args.get()}")
 
@@ -93,12 +97,13 @@ class EmailProcessor:
     @staticmethod
     def create_test_instance():
         filesystem = Filesystem.create_null()
-        processor = EmailProcessor(filesystem)
+        processor = EmailProcessor(filesystem, uuid=UUID.create_null())
         return filesystem, processor
 
-    def __init__(self, filesystem):
+    def __init__(self, filesystem, uuid):
         self.filesystem = filesystem
-        self.db = Database(self.filesystem)
+        self.uuid = uuid
+        self.db = Database(self.filesystem, self.uuid)
 
     def project_new_conversation(self, project):
         """
@@ -108,8 +113,8 @@ class EmailProcessor:
         >>> filesystem.write("projects/user.json", "{}")
         >>> processor.project_new_conversation("user")
         >>> filesystem.read("projects/user.json")
-        '{"conversations": [{"id": "abc123"}]}'
-        >>> filesystem.read("projects/user/conversations/abc123.json")
+        '{"conversations": [{"id": "uuid1"}]}'
+        >>> filesystem.read("projects/user/conversations/uuid1.json")
         '{"subject": "foo"}'
 
         If the project does not exists, I fail:
@@ -139,8 +144,9 @@ def email_to_action(email):
 
 class Database:
 
-    def __init__(self, filesystem):
+    def __init__(self, filesystem, uuid):
         self.filesystem = filesystem
+        self.uuid = uuid
 
     @staticmethod
     def get_project_path(name):
@@ -154,7 +160,7 @@ class Database:
         return self.filesystem.exists(self.get_project_path(name))
 
     def create_conversation(self, project):
-        store = JsonStore(self.filesystem)
+        store = JsonStore(self.filesystem, self.uuid)
         conversation_id = store.create(
             self.get_conversations_path(project),
             {"subject": "foo"}
@@ -167,8 +173,9 @@ class Database:
 
 class JsonStore:
 
-    def __init__(self, filesystem):
+    def __init__(self, filesystem, uuid):
         self.filesystem = filesystem
+        self.uuid = uuid
 
     def read(self, path):
         return json.loads(self.filesystem.read(path))
@@ -181,7 +188,7 @@ class JsonStore:
         self.filesystem.write(path, json.dumps(x))
 
     def create(self, path, data):
-        object_id = "abc123"
+        object_id = self.uuid.get()
         self.filesystem.write(
             os.path.join(path, f"{object_id}.json"),
             json.dumps(data)
@@ -263,6 +270,48 @@ class Email:
 
     def set_body(self, body):
         self.email_message.set_content(body)
+
+class UUID:
+
+    """
+    I am an infrastructure wrapper for UUIDs.
+
+    >>> uuid = UUID.create().get()
+    >>> type(uuid)
+    <class 'str'>
+    >>> len(uuid)
+    32
+
+    The null version of me returns predictable ids:
+
+    >>> uuid = UUID.create_null()
+    >>> uuid.get()
+    'uuid1'
+    >>> uuid.get()
+    'uuid2'
+    """
+
+    @staticmethod
+    def create():
+        return UUID(uuid=uuid)
+
+    @staticmethod
+    def create_null():
+        class NullUuid4:
+            def __init__(self, number):
+                self.hex = f"uuid{number}"
+        class NullUuid:
+            counter = 0
+            def uuid4(self):
+                self.counter += 1
+                return NullUuid4(self.counter)
+        return UUID(uuid=NullUuid())
+
+    def __init__(self, uuid):
+        self.uuid = uuid
+
+    def get(self):
+        return self.uuid.uuid4().hex
 
 class Filesystem:
 
