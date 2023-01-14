@@ -80,31 +80,12 @@ class ProjectsApp:
 
     def run(self):
         if self.args.get() == ["process_email"]:
-            EmailProcessor(self.filesystem).process(Email.parse(self.stdin.read()))
+            action = email_to_action(Email.parse(self.stdin.read()))
+            return getattr(EmailProcessor(self.filesystem), action["name"])(**action["args"])
         else:
             sys.exit(f"Unknown command {self.args.get()}")
 
 class EmailProcessor:
-
-    """
-    I create a conversation when I receive an email to a project address:
-
-    >>> filesystem, processor = EmailProcessor.create_test_instance()
-
-    Given a project 'test':
-
-    >>> filesystem.write("projects/user.json", "{}")
-
-    >>> processor.process(Email.create_test_instance())
-    Conversation created
-
-    If a receive an email to the project address that does not exist, I fail:
-
-    >>> processor.process(Email.create_test_instance(from_address="non_existing_project@projects.rickardlindberg.me"))
-    Traceback (most recent call last):
-        ...
-    projects.ProjectNotFound: non_existing_project
-    """
 
     @staticmethod
     def create_test_instance():
@@ -116,11 +97,22 @@ class EmailProcessor:
         self.filesystem = filesystem
         self.db = Database(self.filesystem)
 
-    def process(self, email):
-        action = email_to_action(email)
-        return getattr(self, action["name"])(**action["args"])
-
     def project_new_conversation(self, project):
+        """
+        I create a new conversation in a project:
+
+        >>> filesystem, processor = EmailProcessor.create_test_instance()
+        >>> filesystem.write("projects/user.json", "{}")
+        >>> processor.project_new_conversation("user")
+        Conversation created
+
+        If the project does not exists, I fail:
+
+        >>> processor.project_new_conversation("non_existing_project")
+        Traceback (most recent call last):
+            ...
+        projects.ProjectNotFound: non_existing_project
+        """
         if not self.db.project_exists(project):
             raise ProjectNotFound(project)
         print("Conversation created")
