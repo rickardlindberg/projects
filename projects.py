@@ -110,11 +110,11 @@ class EmailProcessor:
         I create a new conversation in a project:
 
         >>> filesystem, processor = EmailProcessor.create_test_instance()
-        >>> filesystem.write("projects/user.json", "{}")
-        >>> processor.project_new_conversation("user")
-        >>> filesystem.read("projects/user.json")
+        >>> filesystem.write("projects/timeline.json", "{}")
+        >>> processor.project_new_conversation("timeline")
+        >>> filesystem.read("projects/timeline.json")
         '{"conversations": [{"id": "uuid1"}]}'
-        >>> filesystem.read("projects/user/conversations/uuid1.json")
+        >>> filesystem.read("projects/timeline/conversations/uuid1.json")
         '{"subject": "foo"}'
 
         If the project does not exists, I fail:
@@ -163,7 +163,9 @@ class Database:
         store = JsonStore(self.filesystem, self.uuid)
         conversation_id = store.create(
             self.get_conversations_path(project),
-            {"subject": "foo"}
+            {
+                "subject": "foo",
+            }
         )
         store.append(
             self.get_project_path(project),
