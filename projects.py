@@ -24,7 +24,7 @@ class ProjectsApp:
     >>> database = ProjectsApp.run_in_test_mode(
     ...     args=["process_email"],
     ...     stdin=Email.create_test_instance(
-    ...         from_address="timeline@projects.rickardlindberg.me"
+    ...         to_address="timeline@projects.rickardlindberg.me"
     ...     ).render(),
     ...     database_inits=[
     ...         lambda db: db.create_project("timeline"),
@@ -164,7 +164,7 @@ class EmailProcessor:
         >>> database.watch_project("timeline", "watcher2@example.com")
 
         >>> raw_email = Email.create_test_instance(
-        ...     from_address="timeline@projects.rickardlindberg.me",
+        ...     to_address="timeline@projects.rickardlindberg.me",
         ...     subject="Hello World!",
         ... ).render()
         >>> processor.process(raw_email)
@@ -190,7 +190,7 @@ class EmailProcessor:
         If the project does not exists, I fail:
 
         >>> processor.process(Email.create_test_instance(
-        ...     from_address="non_existing_project@projects.rickardlindberg.me"
+        ...     to_address="non_existing_project@projects.rickardlindberg.me"
         ... ).render())
         Traceback (most recent call last):
             ...
@@ -357,9 +357,9 @@ class Email:
     def get_user(self):
         """
         >>> Email.create_test_instance().get_user()
-        'user'
+        'to'
         """
-        return self.get_from().split("@", 1)[0]
+        return self.get_to().split("@", 1)[0]
 
     def get_subject(self):
         return self.email_message["Subject"]
