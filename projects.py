@@ -5,6 +5,7 @@ import contextlib
 import email.message
 import email.parser
 import email.policy
+import json
 import os
 import subprocess
 import sys
@@ -18,7 +19,7 @@ class ProjectsApp:
 
     I can process emails:
 
-    >>> ProjectsApp.run_in_test_mode(
+    >>> filesystem = ProjectsApp.run_in_test_mode(
     ...     args=["process_email"],
     ...     stdin=Email.create_test_instance(
     ...         from_address="timeline@projects.rickardlindberg.me"
@@ -27,7 +28,8 @@ class ProjectsApp:
     ...         Database.get_project_path("timeline"): "{}",
     ...     }
     ... )
-    Conversation created
+    >>> len(json.loads(filesystem.read("projects/timeline.json"))["conversations"])
+    1
 
     NOTE: We just want to assert that the email was processed somehow. Details
     of email processing is implemented and tested in EmailProcessor.
@@ -71,7 +73,8 @@ class ProjectsApp:
             stdin=Stdin.create_null(stdin),
             filesystem=fs_wrapper
         )
-        return app.run()
+        app.run()
+        return fs_wrapper
 
     def __init__(self, args, stdin, filesystem):
         self.args = args
@@ -104,7 +107,10 @@ class EmailProcessor:
         >>> filesystem, processor = EmailProcessor.create_test_instance()
         >>> filesystem.write("projects/user.json", "{}")
         >>> processor.project_new_conversation("user")
-        Conversation created
+        >>> filesystem.read("projects/user.json")
+        '{"conversations": [{"id": "abc123"}]}'
+        >>> filesystem.read("projects/user/conversations/abc123.json")
+        '{"subject": "foo"}'
 
         If the project does not exists, I fail:
 
@@ -115,7 +121,7 @@ class EmailProcessor:
         """
         if not self.db.project_exists(project):
             raise ProjectNotFound(project)
-        print("Conversation created")
+        self.db.create_conversation(project)
 
 def email_to_action(email):
     """
@@ -140,8 +146,47 @@ class Database:
     def get_project_path(name):
         return f"projects/{name}.json"
 
+    @staticmethod
+    def get_conversations_path(project_name):
+        return f"projects/{project_name}/conversations/"
+
     def project_exists(self, name):
         return self.filesystem.exists(self.get_project_path(name))
+
+    def create_conversation(self, project):
+        store = JsonStore(self.filesystem)
+        conversation_id = store.create(
+            self.get_conversations_path(project),
+            {"subject": "foo"}
+        )
+        store.append(
+            self.get_project_path(project),
+            "conversations",
+            {"id": conversation_id}
+        )
+
+class JsonStore:
+
+    def __init__(self, filesystem):
+        self.filesystem = filesystem
+
+    def read(self, path):
+        return json.loads(self.filesystem.read(path))
+
+    def append(self, path, key, item):
+        x = self.read(path)
+        if key not in x:
+            x[key] = []
+        x[key].append(item)
+        self.filesystem.write(path, json.dumps(x))
+
+    def create(self, path, data):
+        object_id = "abc123"
+        self.filesystem.write(
+            os.path.join(path, f"{object_id}.json"),
+            json.dumps(data)
+        )
+        return object_id
 
 class ProjectNotFound(ValueError):
     pass
