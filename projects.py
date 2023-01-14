@@ -20,16 +20,17 @@ class ProjectsApp:
 
     I can process emails:
 
-    >>> filesystem = ProjectsApp.run_in_test_mode(
+    >>> database = ProjectsApp.run_in_test_mode(
     ...     args=["process_email"],
     ...     stdin=Email.create_test_instance(
     ...         from_address="timeline@projects.rickardlindberg.me"
     ...     ).render(),
-    ...     filesystem={
-    ...         "projects/timeline.json": "{}",
-    ...     }
+    ...     database_inits=[
+    ...         lambda db: db.create_project("timeline"),
+    ...     ]
     ... )
-    >>> len(json.loads(filesystem.read("projects/timeline.json"))["conversations"])
+
+    >>> len(database.get_project("timeline")["conversations"])
     1
 
     NOTE: We just want to assert that the email was processed somehow. Details
@@ -61,33 +62,32 @@ class ProjectsApp:
         return ProjectsApp(
             args=Args.create(),
             stdin=Stdin.create(),
-            filesystem=Filesystem.create(),
-            uuid=UUID.create(),
+            database=Database(
+                filesystem=Filesystem.create(),
+                uuid=UUID.create(),
+            )
         )
 
     @staticmethod
-    def run_in_test_mode(args=[], stdin="", filesystem={}):
-        fs_wrapper = Filesystem.create_null()
-        for path, contents in filesystem.items():
-            fs_wrapper.write(path, contents)
+    def run_in_test_mode(args=[], stdin="", database_inits=[]):
+        database = Database(
+            filesystem=Filesystem.create_null(),
+            uuid=UUID.create_null()
+        )
+        for x in database_inits:
+            x(database)
         app = ProjectsApp(
             args=Args.create_null(args),
             stdin=Stdin.create_null(stdin),
-            filesystem=fs_wrapper,
-            uuid=UUID.create_null(),
+            database=database
         )
         app.run()
-        return fs_wrapper
+        return database
 
-    def __init__(self, args, stdin, filesystem, uuid):
+    def __init__(self, args, stdin, database):
         self.args = args
         self.stdin = stdin
-        self.filesystem = filesystem
-        self.uuid = uuid
-        self.database = Database(
-            filesystem=self.filesystem,
-            uuid=self.uuid
-        )
+        self.database = database
 
     def run(self):
         if self.args.get() == ["process_email"]:
