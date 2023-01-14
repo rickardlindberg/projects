@@ -454,7 +454,7 @@ class SMTPServer(Observable):
                 pass
         class NullSmtplib:
             @contextlib.contextmanager
-            def SMTP(self):
+            def SMTP(self, host):
                 yield NullSMTP()
         return SMTPServer(smtplib=NullSmtplib())
 
@@ -463,7 +463,7 @@ class SMTPServer(Observable):
         self.smtplib = smtplib
 
     def send(self, email):
-        with self.smtplib.SMTP() as smtp:
+        with self.smtplib.SMTP(host="localhost") as smtp:
             smtp.send_message(email)
             self.notify({
                 "type": "email",
