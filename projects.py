@@ -110,16 +110,24 @@ class EmailProcessor:
         I create a new conversation in a project:
 
         >>> filesystem, processor = EmailProcessor.create_test_instance()
-        >>> filesystem.write("projects/timeline.json", "{}")
-        >>> processor.process(Email.create_test_instance(from_address="timeline@projects.rickardlindberg.me"))
-        >>> filesystem.read("projects/timeline.json")
+        >>> filesystem.write(Database.get_project_path("timeline"), "{}")
+
+        >>> processor.process(Email.create_test_instance(
+        ...     from_address="timeline@projects.rickardlindberg.me",
+        ...     subject="Hello World!",
+        ... ))
+
+        >>> filesystem.read(Database.get_project_path("timeline"))
         '{"conversations": [{"id": "uuid1"}]}'
+
         >>> filesystem.read("projects/timeline/conversations/uuid1.json")
-        '{"subject": "foo"}'
+        '{"subject": "Hello World!"}'
 
         If the project does not exists, I fail:
 
-        >>> processor.process(Email.create_test_instance(from_address="non_existing_project@projects.rickardlindberg.me"))
+        >>> processor.process(Email.create_test_instance(
+        ...     from_address="non_existing_project@projects.rickardlindberg.me"
+        ... ))
         Traceback (most recent call last):
             ...
         projects.ProjectNotFound: non_existing_project
@@ -127,7 +135,7 @@ class EmailProcessor:
         project = email.get_user()
         if not self.db.project_exists(project):
             raise ProjectNotFound(project)
-        self.db.create_conversation(project)
+        self.db.create_conversation(project, email.get_subject())
 
 class Database:
 
@@ -146,11 +154,11 @@ class Database:
     def project_exists(self, name):
         return self.filesystem.exists(self.get_project_path(name))
 
-    def create_conversation(self, project):
+    def create_conversation(self, project, subject):
         conversation_id = self.store.create(
             self.get_conversations_path(project),
             {
-                "subject": "foo",
+                "subject": subject,
             }
         )
         self.store.append(
@@ -191,7 +199,8 @@ class Email:
     @staticmethod
     def create_test_instance(
         from_address="user@example.com",
-        body="hello"
+        body="hello",
+        subject="subject"
     ):
         """
         >>> email = Email.create_test_instance()
@@ -199,10 +208,13 @@ class Email:
         'user@example.com'
         >>> email.get_body()
         'hello\\n'
+        >>> email.get_subject()
+        'subject'
         """
         email = Email()
         email.set_from(from_address)
         email.set_body(body)
+        email.set_subject(subject)
         return email
 
     @staticmethod
@@ -211,11 +223,14 @@ class Email:
         >>> email = Email.parse(Email.create_test_instance(
         ...     from_address="test@example.com",
         ...     body="test",
+        ...     subject="foo",
         ... ).render())
         >>> email.get_from()
         'test@example.com'
         >>> email.get_body()
         'test\\n'
+        >>> email.get_subject()
+        'foo'
         """
         return Email(email.parser.Parser(policy=email.policy.default).parsestr(text))
 
@@ -228,6 +243,7 @@ class Email:
         Content-Type: text/plain; charset="utf-8"
         Content-Transfer-Encoding: 7bit
         MIME-Version: 1.0
+        Subject: subject
         <BLANKLINE>
         hello
         <BLANKLINE>
@@ -246,6 +262,12 @@ class Email:
         'user'
         """
         return self.get_from().split("@", 1)[0]
+
+    def get_subject(self):
+        return self.email_message["Subject"]
+
+    def set_subject(self, subject):
+        self.email_message["Subject"] = subject
 
     def get_from(self):
         return self.email_message["From"]
