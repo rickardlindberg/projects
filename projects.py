@@ -3,6 +3,8 @@
 import subprocess
 import sys
 from email.message import EmailMessage
+from email.parser import Parser
+from email.policy import default
 
 """
 >>> 1+1
@@ -75,6 +77,17 @@ class Email:
         email.set_body(body)
         return email
 
+    @staticmethod
+    def parse(text):
+        """
+        >>> email = Email.parse(Email.create_test_instance().render())
+        >>> email.get_from()
+        'user@example.com'
+        >>> email.get_body()
+        'hello\\n'
+        """
+        return Email(Parser(policy=default).parsestr(text))
+
     def render(self):
         """
         Can render emails:
@@ -90,11 +103,17 @@ class Email:
         """
         return str(self.email)
 
-    def __init__(self):
-        self.email = EmailMessage()
+    def __init__(self, email_message=None):
+        self.email = EmailMessage() if email_message is None else email_message
+
+    def get_from(self):
+        return self.email["From"]
 
     def set_from(self, from_address):
         self.email["From"] = from_address
+
+    def get_body(self):
+        return self.email.get_content()
 
     def set_body(self, body):
         self.email.set_content(body)
