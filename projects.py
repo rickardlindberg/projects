@@ -87,8 +87,10 @@ class ProjectsApp:
 
     def run(self):
         if self.args.get() == ["process_email"]:
-            action = email_to_action(Email.parse(self.stdin.read()))
-            return getattr(EmailProcessor(self.filesystem, self.uuid), action["name"])(**action["args"])
+            return EmailProcessor(
+                self.filesystem,
+                self.uuid
+            ).process(Email.parse(self.stdin.read()))
         else:
             sys.exit(f"Unknown command {self.args.get()}")
 
@@ -101,17 +103,15 @@ class EmailProcessor:
         return filesystem, processor
 
     def __init__(self, filesystem, uuid):
-        self.filesystem = filesystem
-        self.uuid = uuid
-        self.db = Database(self.filesystem, self.uuid)
+        self.db = Database(filesystem, uuid)
 
-    def project_new_conversation(self, project):
+    def process(self, email):
         """
         I create a new conversation in a project:
 
         >>> filesystem, processor = EmailProcessor.create_test_instance()
         >>> filesystem.write("projects/timeline.json", "{}")
-        >>> processor.project_new_conversation("timeline")
+        >>> processor.process(Email.create_test_instance(from_address="timeline@projects.rickardlindberg.me"))
         >>> filesystem.read("projects/timeline.json")
         '{"conversations": [{"id": "uuid1"}]}'
         >>> filesystem.read("projects/timeline/conversations/uuid1.json")
@@ -119,34 +119,21 @@ class EmailProcessor:
 
         If the project does not exists, I fail:
 
-        >>> processor.project_new_conversation("non_existing_project")
+        >>> processor.process(Email.create_test_instance(from_address="non_existing_project@projects.rickardlindberg.me"))
         Traceback (most recent call last):
             ...
         projects.ProjectNotFound: non_existing_project
         """
+        project = email.get_user()
         if not self.db.project_exists(project):
             raise ProjectNotFound(project)
         self.db.create_conversation(project)
-
-def email_to_action(email):
-    """
-    >>> email_to_action(Email.create_test_instance(
-    ...     from_address="test@projects.rickardlindberg.me"
-    ... ))
-    {'name': 'project_new_conversation', 'args': {'project': 'test'}}
-    """
-    return {
-        "name": "project_new_conversation",
-        "args": {
-            "project": email.get_user(),
-        },
-    }
 
 class Database:
 
     def __init__(self, filesystem, uuid):
         self.filesystem = filesystem
-        self.uuid = uuid
+        self.store = JsonStore(filesystem, uuid)
 
     @staticmethod
     def get_project_path(name):
@@ -160,14 +147,13 @@ class Database:
         return self.filesystem.exists(self.get_project_path(name))
 
     def create_conversation(self, project):
-        store = JsonStore(self.filesystem, self.uuid)
-        conversation_id = store.create(
+        conversation_id = self.store.create(
             self.get_conversations_path(project),
             {
                 "subject": "foo",
             }
         )
-        store.append(
+        self.store.append(
             self.get_project_path(project),
             "conversations",
             {"id": conversation_id}
