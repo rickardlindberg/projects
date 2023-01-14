@@ -36,6 +36,17 @@ class ProjectsApp:
     NOTE: We just want to assert that the email was processed somehow. Details
     of email processing is implemented and tested in EmailProcessor.
 
+    Project creation
+    ================
+
+    I can create projects:
+
+    >>> database = ProjectsApp.run_in_test_mode(
+    ...     args=["create_project", "timeline"],
+    ... )
+    >>> database.get_project("timeline")
+    {}
+
     Unknown commands
     ================
 
@@ -92,6 +103,9 @@ class ProjectsApp:
     def run(self):
         if self.args.get() == ["process_email"]:
             return EmailProcessor(self.database).process(self.stdin.read())
+        elif self.args.get()[:1] == ["create_project"]:
+            name = self.args.get()[1]
+            self.database.create_project(name)
         else:
             sys.exit(f"Unknown command {self.args.get()}")
 
