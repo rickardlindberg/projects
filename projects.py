@@ -169,8 +169,14 @@ class EmailProcessor:
         ... ).render()
         >>> processor.process(raw_email)
         >>> events
-        {'type': 'email', 'to': 'watcher1@example.com'}
-        {'type': 'email', 'to': 'watcher2@example.com'}
+        email =>
+            from: 'timeline@projects.rickardlindberg.me'
+            reply-to: 'timeline+uuid2@projects.rickardlindberg.me'
+            to: 'watcher1@example.com'
+        email =>
+            from: 'timeline@projects.rickardlindberg.me'
+            reply-to: 'timeline+uuid2@projects.rickardlindberg.me'
+            to: 'watcher2@example.com'
 
         >>> database.get_project("timeline")["conversations"]
         [{'id': 'uuid2'}]
@@ -194,9 +200,11 @@ class EmailProcessor:
         project = email.get_user()
         if not self.db.project_exists(project):
             raise ProjectNotFound(project)
-        self.db.create_conversation(project, email.get_subject(), raw_email)
+        conversation_id = self.db.create_conversation(project, email.get_subject(), raw_email)
         for watcher in self.db.get_project_watchers(project):
             email.set_to(watcher)
+            email.set_from(f"{project}@projects.rickardlindberg.me")
+            email.set_reply_to(f"{project}+{conversation_id}@projects.rickardlindberg.me")
             email.send(self.smtp_server)
 
 class Database:
@@ -243,6 +251,7 @@ class Database:
             "conversations",
             {"id": conversation_id}
         )
+        return conversation_id
 
     def get_conversation_entry(self, project_name, entry_id):
         return self.store.load(f"projects/{project_name}/conversations/entries/{entry_id}.json")
@@ -370,6 +379,9 @@ class Email:
     def set_to(self, to_address):
         self._set_header("To", to_address)
 
+    def set_reply_to(self, reply_to_address):
+        self._set_header("Reply-To", reply_to_address)
+
     def get_body(self):
         return self.email_message.get_content()
 
@@ -401,7 +413,16 @@ class Events:
         self.events.append(event)
 
     def __repr__(self):
-        return "\n".join(str(x) for x in self.events)
+        def format_event(event):
+            if isinstance(event, dict) and "type" in event:
+                part = []
+                for key, value in event.items():
+                    if key != "type":
+                        part.append(f"\n    {key}: {repr(value)}")
+                return f"{event['type']} =>{''.join(part)}"
+            else:
+                return str(x)
+        return "\n".join(format_event(x) for x in self.events)
 
 class SMTPServer(Observable):
 
@@ -413,7 +434,10 @@ class SMTPServer(Observable):
     >>> smtp_server.add_listener(events.notify)
     >>> Email.create_test_instance().send(smtp_server)
     >>> events
-    {'type': 'email', 'to': 'to@example.com'}
+    email =>
+        from: 'user@example.com'
+        reply-to: None
+        to: 'to@example.com'
 
     >>> isinstance(SMTPServer.create(), SMTPServer)
     True
@@ -441,7 +465,12 @@ class SMTPServer(Observable):
     def send(self, email):
         with self.smtplib.SMTP() as smtp:
             smtp.send_message(email)
-            self.notify({"type": "email", "to": email["To"]})
+            self.notify({
+                "type": "email",
+                "from": email["From"],
+                "reply-to": email["Reply-To"],
+                "to": email["To"],
+            })
 
 class UUID:
 
