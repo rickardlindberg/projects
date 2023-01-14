@@ -2,6 +2,7 @@
 
 import subprocess
 import sys
+from email.message import EmailMessage
 
 """
 >>> 1+1
@@ -21,7 +22,7 @@ class ProjectsApp:
 
     >>> ProjectsApp.run_in_test_mode(
     ...     args=["process_email"],
-    ...     stdin="...an email..."
+    ...     stdin=Email.create_test_instance(from_address="timeline@projects.rickardlindberg.me").render()
     ... )
     Projects!
 
@@ -61,6 +62,42 @@ class ProjectsApp:
             print("Projects!")
         else:
             sys.exit(f"Unknown command {self.args.get()}")
+
+class Email:
+
+    @staticmethod
+    def create_test_instance(
+        from_address="user@example.com",
+        body="hello"
+    ):
+        email = Email()
+        email.set_from(from_address)
+        email.set_body(body)
+        return email
+
+    def render(self):
+        """
+        Can render emails:
+
+        >>> print(Email.create_test_instance().render())
+        From: user@example.com
+        Content-Type: text/plain; charset="utf-8"
+        Content-Transfer-Encoding: 7bit
+        MIME-Version: 1.0
+        <BLANKLINE>
+        hello
+        <BLANKLINE>
+        """
+        return str(self.email)
+
+    def __init__(self):
+        self.email = EmailMessage()
+
+    def set_from(self, from_address):
+        self.email["From"] = from_address
+
+    def set_body(self, body):
+        self.email.set_content(body)
 
 class Args:
 
