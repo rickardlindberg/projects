@@ -90,7 +90,7 @@ class ProjectsApp:
             return EmailProcessor(
                 self.filesystem,
                 self.uuid
-            ).process(Email.parse(self.stdin.read()))
+            ).process(self.stdin.read())
         else:
             sys.exit(f"Unknown command {self.args.get()}")
 
@@ -105,37 +105,51 @@ class EmailProcessor:
     def __init__(self, filesystem, uuid):
         self.db = Database(filesystem, uuid)
 
-    def process(self, email):
+    def process(self, raw_email):
         """
         I create a new conversation in a project:
 
         >>> filesystem, processor = EmailProcessor.create_test_instance()
-        >>> filesystem.write("projects/timeline.json", "{}")
+        >>> filesystem.write("projects/timeline.json", json.dumps({
+        ...     "watchers": [
+        ...         "watcher1@example.com",
+        ...         "watcher2@example.com",
+        ...     ]
+        ... }))
 
-        >>> processor.process(Email.create_test_instance(
+        >>> raw_email = Email.create_test_instance(
         ...     from_address="timeline@projects.rickardlindberg.me",
         ...     subject="Hello World!",
-        ... ))
+        ... ).render()
+        >>> processor.process(raw_email)
+        watcher1@example.com
+        watcher2@example.com
 
-        >>> filesystem.read("projects/timeline.json")
-        '{"conversations": [{"id": "uuid1"}]}'
+        >>> json.loads(filesystem.read("projects/timeline.json"))["conversations"]
+        [{'id': 'uuid2'}]
 
-        >>> filesystem.read("projects/timeline/conversations/uuid1.json")
-        '{"subject": "Hello World!"}'
+        >>> filesystem.read("projects/timeline/conversations/uuid2.json")
+        '{"subject": "Hello World!", "entries": [{"id": "uuid1"}]}'
+
+        >>> json.loads(filesystem.read("projects/timeline/conversations/entries/uuid1.json"))["source_email"] == raw_email
+        True
 
         If the project does not exists, I fail:
 
         >>> processor.process(Email.create_test_instance(
         ...     from_address="non_existing_project@projects.rickardlindberg.me"
-        ... ))
+        ... ).render())
         Traceback (most recent call last):
             ...
         projects.ProjectNotFound: non_existing_project
         """
+        email = Email.parse(raw_email)
         project = email.get_user()
         if not self.db.project_exists(project):
             raise ProjectNotFound(project)
-        self.db.create_conversation(project, email.get_subject())
+        self.db.create_conversation(project, email.get_subject(), raw_email)
+        for watcher in self.db.get_project_watchers(project):
+            print(watcher)
 
 class Database:
 
@@ -151,14 +165,30 @@ class Database:
     def get_conversations_path(project_name):
         return f"projects/{project_name}/conversations/"
 
+    @staticmethod
+    def get_conversations_entries_path(project_name):
+        return f"projects/{project_name}/conversations/entries/"
+
     def project_exists(self, name):
         return self.filesystem.exists(self.get_project_path(name))
 
-    def create_conversation(self, project, subject):
+    def get_project_watchers(self, name):
+        project = self.store.load(self.get_project_path(name))
+        return project.get("watchers", [])
+
+    def create_conversation(self, project, subject, raw_email):
         conversation_id = self.store.create(
             self.get_conversations_path(project),
             {
                 "subject": subject,
+                "entries": [{
+                    "id": self.store.create(
+                        self.get_conversations_entries_path(project),
+                        {
+                            "source_email": raw_email,
+                        }
+                    )
+                }]
             }
         )
         self.store.append(
@@ -173,8 +203,11 @@ class JsonStore:
         self.filesystem = filesystem
         self.uuid = uuid
 
+    def load(self, path):
+        return json.loads(self.filesystem.read(path))
+
     def append(self, path, key, item):
-        x = json.loads(self.filesystem.read(path))
+        x = self.load(path)
         if key not in x:
             x[key] = []
         x[key].append(item)
