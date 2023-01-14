@@ -532,6 +532,8 @@ class Filesystem:
                 return path in in_memory_store
         class NullOs:
             path = NullPath()
+            def makedirs(self, path):
+                pass
         class NullBuiltins:
             @contextlib.contextmanager
             def open(self, path, mode):
@@ -595,13 +597,17 @@ class Filesystem:
     def write(self, path, contents):
         """
         >>> tmp_dir = tempfile.TemporaryDirectory()
-        >>> tmp_path = os.path.join(tmp_dir.name, "test")
+        >>> tmp_path = os.path.join(tmp_dir.name, "subdir1", "subdir2", "test")
         >>> filesystem = Filesystem.create()
 
+        >>> filesystem.write(tmp_path, "test content")
         >>> filesystem.write(tmp_path, "test content")
         >>> open(tmp_path).read()
         'test content'
         """
+        dir_path = os.path.dirname(path)
+        if not self.exists(dir_path):
+            self.os.makedirs(dir_path)
         with self.builtins.open(path, "w") as f:
             f.write(contents)
 
