@@ -91,7 +91,8 @@ class ProjectsApp:
             database=Database(
                 filesystem=Filesystem.create(),
                 uuid=UUID.create(),
-            )
+            ),
+            smtp_server=SMTPServer.create()
         )
 
     @staticmethod
@@ -105,19 +106,24 @@ class ProjectsApp:
         app = ProjectsApp(
             args=Args.create_null(args),
             stdin=Stdin.create_null(stdin),
-            database=database
+            database=database,
+            smtp_server=SMTPServer.create_null()
         )
         app.run()
         return database
 
-    def __init__(self, args, stdin, database):
+    def __init__(self, args, stdin, database, smtp_server):
         self.args = args
         self.stdin = stdin
         self.database = database
+        self.smtp_server = smtp_server
 
     def run(self):
         if self.args.get() == ["process_email"]:
-            return EmailProcessor(self.database).process(self.stdin.read())
+            return EmailProcessor(
+                database=self.database,
+                smtp_server=self.smtp_server
+            ).process(self.stdin.read())
         elif self.args.get()[:1] == ["create_project"]:
             name = self.args.get()[1]
             self.database.create_project(name)
@@ -135,17 +141,24 @@ class EmailProcessor:
             filesystem=Filesystem.create_null(),
             uuid=UUID.create_null()
         )
-        processor = EmailProcessor(database)
-        return database, processor
+        events = Events()
+        smtp_server = SMTPServer.create_null()
+        smtp_server.add_listener(events.notify)
+        processor = EmailProcessor(
+            database=database,
+            smtp_server=smtp_server,
+        )
+        return database, events, processor
 
-    def __init__(self, database):
+    def __init__(self, database, smtp_server):
         self.db = database
+        self.smtp_server = smtp_server
 
     def process(self, raw_email):
         """
         I create a new conversation in a project:
 
-        >>> database, processor = EmailProcessor.create_test_instance()
+        >>> database, events, processor = EmailProcessor.create_test_instance()
         >>> database.create_project("timeline")
         >>> database.watch_project("timeline", "watcher1@example.com")
         >>> database.watch_project("timeline", "watcher2@example.com")
@@ -155,8 +168,9 @@ class EmailProcessor:
         ...     subject="Hello World!",
         ... ).render()
         >>> processor.process(raw_email)
-        watcher1@example.com
-        watcher2@example.com
+        >>> events
+        {'type': 'email', 'to': 'watcher1@example.com'}
+        {'type': 'email', 'to': 'watcher2@example.com'}
 
         >>> database.get_project("timeline")["conversations"]
         [{'id': 'uuid2'}]
@@ -182,7 +196,8 @@ class EmailProcessor:
             raise ProjectNotFound(project)
         self.db.create_conversation(project, email.get_subject(), raw_email)
         for watcher in self.db.get_project_watchers(project):
-            print(watcher)
+            email.set_to(watcher)
+            email.send(self.smtp_server)
 
 class Database:
 
