@@ -11,5 +11,19 @@
 cat email | ./projects.py process_email
 """
 
+class ProjectsApp:
+
+    """
+    >>> ProjectsApp.create().run()
+    Projects!
+    """
+
+    @staticmethod
+    def create():
+        return ProjectsApp()
+
+    def run(self):
+        print("Projects!")
+
 if __name__ == "__main__":
-    print("Projects!")
+    ProjectsApp.create().run()
