@@ -1,32 +1,32 @@
 #!/usr/bin/env python3
 
+import email.message
+import email.parser
+import email.policy
 import subprocess
 import sys
-from email.message import EmailMessage
-from email.parser import Parser
-from email.policy import default
-
-"""
->>> 1+1
-2
-
-* give system an email
-* assert that conversation is created
-* assert that email updates are sent
-
-cat email | ./projects.py process_email
-"""
 
 class ProjectsApp:
 
     """
-    I can process an email:
+    Email processing
+    ================
+
+    I can process emails:
 
     >>> ProjectsApp.run_in_test_mode(
     ...     args=["process_email"],
-    ...     stdin=Email.create_test_instance(from_address="timeline@projects.rickardlindberg.me").render()
+    ...     stdin=Email.create_test_instance(
+    ...         from_address="timeline@projects.rickardlindberg.me"
+    ...     ).render()
     ... )
     Conversation created
+
+    NOTE: We just want to assert that the email was processed somehow. Details
+    of email processing is implemented and tested in EmailProcessor.
+
+    Unknown commands
+    ================
 
     I fail if command is unknown:
 
@@ -36,6 +36,9 @@ class ProjectsApp:
     Traceback (most recent call last):
         ...
     SystemExit: Unknown command ['unknown_command']
+
+    Instantiation
+    =============
 
     I can instantiate myself:
 
@@ -87,6 +90,13 @@ class Email:
         from_address="user@example.com",
         body="hello"
     ):
+        """
+        >>> email = Email.create_test_instance()
+        >>> email.get_from()
+        'user@example.com'
+        >>> email.get_body()
+        'hello\\n'
+        """
         email = Email()
         email.set_from(from_address)
         email.set_body(body)
@@ -95,13 +105,16 @@ class Email:
     @staticmethod
     def parse(text):
         """
-        >>> email = Email.parse(Email.create_test_instance().render())
+        >>> email = Email.parse(Email.create_test_instance(
+        ...     from_address="test@example.com",
+        ...     body="test",
+        ... ).render())
         >>> email.get_from()
-        'user@example.com'
+        'test@example.com'
         >>> email.get_body()
-        'hello\\n'
+        'test\\n'
         """
-        return Email(Parser(policy=default).parsestr(text))
+        return Email(email.parser.Parser(policy=email.policy.default).parsestr(text))
 
     def render(self):
         """
@@ -116,22 +129,25 @@ class Email:
         hello
         <BLANKLINE>
         """
-        return str(self.email)
+        return str(self.email_message)
 
     def __init__(self, email_message=None):
-        self.email = EmailMessage() if email_message is None else email_message
+        if email_message is None:
+            self.email_message = email.message.EmailMessage()
+        else:
+            self.email_message = email_message
 
     def get_from(self):
-        return self.email["From"]
+        return self.email_message["From"]
 
     def set_from(self, from_address):
-        self.email["From"] = from_address
+        self.email_message["From"] = from_address
 
     def get_body(self):
-        return self.email.get_content()
+        return self.email_message.get_content()
 
     def set_body(self, body):
-        self.email.set_content(body)
+        self.email_message.set_content(body)
 
 class Stdin:
 
@@ -145,7 +161,7 @@ class Stdin:
     ... ], input="test", stdout=subprocess.PIPE, text=True).stdout.strip())
     test
 
-    I can configure responses:
+    I can configure what stdin is:
 
     >>> Stdin.create_null("configured response").read()
     'configured response'
@@ -162,7 +178,7 @@ class Stdin:
                 return response
         class NullSys:
             stdin = NullStdin()
-        return Stdin(sys=NullSys)
+        return Stdin(sys=NullSys())
 
     def __init__(self, sys):
         self.sys = sys
