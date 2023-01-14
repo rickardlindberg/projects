@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 
+import builtins
+import contextlib
 import email.message
 import email.parser
 import email.policy
+import os
 import subprocess
 import sys
+import tempfile
 
 class ProjectsApp:
 
@@ -18,7 +22,10 @@ class ProjectsApp:
     ...     args=["process_email"],
     ...     stdin=Email.create_test_instance(
     ...         from_address="timeline@projects.rickardlindberg.me"
-    ...     ).render()
+    ...     ).render(),
+    ...     fs={
+    ...         "projects/timeline.json": "{}",
+    ...     }
     ... )
     Conversation created
 
@@ -50,24 +57,30 @@ class ProjectsApp:
     def create():
         return ProjectsApp(
             args=Args.create(),
-            stdin=Stdin.create()
+            stdin=Stdin.create(),
+            filesystem=Filesystem.create()
         )
 
     @staticmethod
-    def run_in_test_mode(args=[], stdin=""):
+    def run_in_test_mode(args=[], stdin="", fs={}):
+        fs_wrapper = Filesystem.create_null()
+        for path, contents in fs.items():
+            fs_wrapper.write(path, contents)
         app = ProjectsApp(
             args=Args.create_null(args),
-            stdin=Stdin.create_null(stdin)
+            stdin=Stdin.create_null(stdin),
+            filesystem=fs_wrapper
         )
         return app.run()
 
-    def __init__(self, args, stdin):
+    def __init__(self, args, stdin, filesystem):
         self.args = args
         self.stdin = stdin
+        self.filesystem = filesystem
 
     def run(self):
         if self.args.get() == ["process_email"]:
-            EmailProcessor().process(Email.parse(self.stdin.read()))
+            EmailProcessor(self.filesystem).process(Email.parse(self.stdin.read()))
         else:
             sys.exit(f"Unknown command {self.args.get()}")
 
@@ -76,19 +89,35 @@ class EmailProcessor:
     """
     I create a conversation when I receive an email to a project address:
 
-    >>> EmailProcessor().process(Email.create_test_instance())
+    >>> fs, processor = EmailProcessor.create_test_instance()
+
+    Given a project 'test':
+
+    >>> fs.write("projects/user.json", "{}")
+
+    >>> processor.process(Email.create_test_instance())
     Conversation created
 
     If a receive an email to the project address that does not exist, I fail:
 
-    >>> EmailProcessor().process(Email.create_test_instance(from_address="non_existing_project@projects.rickardlindberg.me"))
+    >>> processor.process(Email.create_test_instance(from_address="non_existing_project@projects.rickardlindberg.me"))
     Traceback (most recent call last):
         ...
     projects.ConversationNotFound: non_existing_project
     """
+
+    @staticmethod
+    def create_test_instance():
+        fs = Filesystem.create_null()
+        processor = EmailProcessor(fs)
+        return fs, processor
+
+    def __init__(self, filesystem):
+        self.filesystem = filesystem
+
     def process(self, email):
-        if email.get_user() == "non_existing_project":
-            raise ConversationNotFound("non_existing_project")
+        if not self.filesystem.exists(f"projects/{email.get_user()}.json"):
+            raise ConversationNotFound(f"{email.get_user()}")
         print("Conversation created")
 
 class ConversationNotFound(ValueError):
@@ -166,6 +195,97 @@ class Email:
 
     def set_body(self, body):
         self.email_message.set_content(body)
+
+class Filesystem:
+
+    """
+    I am an infrastructure wrapper for working with the filesystem.
+    """
+
+    @staticmethod
+    def create():
+        return Filesystem(os=os, builtins=builtins)
+
+    @staticmethod
+    def create_null():
+        fs = {}
+        class NullPath:
+            def exists(self, path):
+                return path in fs
+        class NullOs:
+            path = NullPath()
+        class NullBuiltins:
+            @contextlib.contextmanager
+            def open(self, path, mode):
+                if mode == "r":
+                    yield NullFileRead(path)
+                elif mode == "w":
+                    yield NullFileWrite(path)
+                else:
+                    raise ValueError(f"Invalid mode {mode}")
+        class NullFile:
+            def __init__(self, path):
+                self.path = path
+        class NullFileRead(NullFile):
+            def read(self):
+                return fs[self.path]
+        class NullFileWrite(NullFile):
+            def write(self, contents):
+                fs[self.path] = contents
+        return Filesystem(os=NullOs(), builtins=NullBuiltins())
+
+    def __init__(self, os, builtins):
+        self.os = os
+        self.builtins = builtins
+
+    def exists(self, path):
+        """
+        Exists in real world:
+
+        >>> fs = Filesystem.create()
+
+        >>> fs.exists("README.md")
+        True
+
+        >>> fs.exists("non_existing_file")
+        False
+
+        Exists in null version:
+
+        >>> fs = Filesystem.create_null()
+        >>> fs.exists("non_existing_file")
+        False
+        >>> fs.write("non_existing_file", "")
+        >>> fs.exists("non_existing_file")
+        True
+        """
+        return self.os.path.exists(path)
+
+    def read(self, path):
+        """
+        >>> tmp_dir = tempfile.TemporaryDirectory()
+        >>> tmp_path = os.path.join(tmp_dir.name, "test")
+        >>> fs = Filesystem.create()
+
+        >>> _ = open(tmp_path, "w").write("test content")
+        >>> fs.read(tmp_path)
+        'test content'
+        """
+        with self.builtins.open(path, "r") as f:
+            return f.read()
+
+    def write(self, path, contents):
+        """
+        >>> tmp_dir = tempfile.TemporaryDirectory()
+        >>> tmp_path = os.path.join(tmp_dir.name, "test")
+        >>> fs = Filesystem.create()
+
+        >>> fs.write(tmp_path, "test content")
+        >>> open(tmp_path).read()
+        'test content'
+        """
+        with self.builtins.open(path, "w") as f:
+            f.write(contents)
 
 class Stdin:
 
