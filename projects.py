@@ -110,14 +110,14 @@ class EmailProcessor:
         I create a new conversation in a project:
 
         >>> filesystem, processor = EmailProcessor.create_test_instance()
-        >>> filesystem.write(Database.get_project_path("timeline"), "{}")
+        >>> filesystem.write("projects/timeline.json", "{}")
 
         >>> processor.process(Email.create_test_instance(
         ...     from_address="timeline@projects.rickardlindberg.me",
         ...     subject="Hello World!",
         ... ))
 
-        >>> filesystem.read(Database.get_project_path("timeline"))
+        >>> filesystem.read("projects/timeline.json")
         '{"conversations": [{"id": "uuid1"}]}'
 
         >>> filesystem.read("projects/timeline/conversations/uuid1.json")
@@ -173,11 +173,8 @@ class JsonStore:
         self.filesystem = filesystem
         self.uuid = uuid
 
-    def read(self, path):
-        return json.loads(self.filesystem.read(path))
-
     def append(self, path, key, item):
-        x = self.read(path)
+        x = json.loads(self.filesystem.read(path))
         if key not in x:
             x[key] = []
         x[key].append(item)
