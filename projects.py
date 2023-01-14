@@ -26,13 +26,7 @@ class ProjectsApp:
     ...     args=["process_email"],
     ...     stdin=Email.create_test_instance(from_address="timeline@projects.rickardlindberg.me").render()
     ... )
-    From: timeline@projects.rickardlindberg.me
-    Content-Type: text/plain; charset="utf-8"
-    Content-Transfer-Encoding: 7bit
-    MIME-Version: 1.0
-    <BLANKLINE>
-    hello
-    <BLANKLINE>
+    Conversation created
 
     I fail if command is unknown:
 
@@ -70,9 +64,21 @@ class ProjectsApp:
 
     def run(self):
         if self.args.get() == ["process_email"]:
-            print(self.stdin.read())
+            EmailProcessor().process(Email.parse(self.stdin.read()))
         else:
             sys.exit(f"Unknown command {self.args.get()}")
+
+class EmailProcessor:
+
+    """
+    I create a conversation when I receive an email to a project address:
+
+    >>> EmailProcessor().process(Email.create_test_instance())
+    Conversation created
+    """
+
+    def process(self, email):
+        print("Conversation created")
 
 class Email:
 
