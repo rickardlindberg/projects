@@ -24,7 +24,7 @@ class ProjectsApp:
     ...         from_address="timeline@projects.rickardlindberg.me"
     ...     ).render(),
     ...     fs={
-    ...         "projects/timeline.json": "{}",
+    ...         Database.get_project_path("timeline"): "{}",
     ...     }
     ... )
     Conversation created
@@ -114,11 +114,24 @@ class EmailProcessor:
 
     def __init__(self, filesystem):
         self.filesystem = filesystem
+        self.db = Database(self.filesystem)
 
     def process(self, email):
-        if not self.filesystem.exists(f"projects/{email.get_user()}.json"):
+        if not self.db.project_exists(email.get_user()):
             raise ConversationNotFound(f"{email.get_user()}")
         print("Conversation created")
+
+class Database:
+
+    def __init__(self, filesystem):
+        self.filesystem = filesystem
+
+    @staticmethod
+    def get_project_path(name):
+        return f"projects/{name}.json"
+
+    def project_exists(self, name):
+        return self.filesystem.exists(self.get_project_path(name))
 
 class ConversationNotFound(ValueError):
     pass
