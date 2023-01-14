@@ -47,6 +47,20 @@ class ProjectsApp:
     >>> database.get_project("timeline")
     {}
 
+    Project watching
+    ================
+
+    I can add watchers to a project project:
+
+    >>> database = ProjectsApp.run_in_test_mode(
+    ...     args=["watch_project", "timeline", "watcher@example.com"],
+    ...     database_inits=[
+    ...         lambda db: db.create_project("timeline"),
+    ...     ]
+    ... )
+    >>> database.get_project("timeline")["watchers"]
+    ['watcher@example.com']
+
     Unknown commands
     ================
 
@@ -106,6 +120,9 @@ class ProjectsApp:
         elif self.args.get()[:1] == ["create_project"]:
             name = self.args.get()[1]
             self.database.create_project(name)
+        elif self.args.get()[:1] == ["watch_project"]:
+            name, email = self.args.get()[1:]
+            self.database.watch_project(name, email)
         else:
             sys.exit(f"Unknown command {self.args.get()}")
 
