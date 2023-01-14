@@ -356,28 +356,29 @@ class Email:
         return self.email_message["Subject"]
 
     def set_subject(self, subject):
-        del self.email_message["Subject"]
-        self.email_message["Subject"] = subject
+        self._set_header("Subject", subject)
 
     def get_from(self):
         return self.email_message["From"]
 
     def set_from(self, from_address):
-        del self.email_message["From"]
-        self.email_message["From"] = from_address
+        self._set_header("From", from_address)
 
     def get_to(self):
         return self.email_message["To"]
 
     def set_to(self, to_address):
-        del self.email_message["To"]
-        self.email_message["To"] = to_address
+        self._set_header("To", to_address)
 
     def get_body(self):
         return self.email_message.get_content()
 
     def set_body(self, body):
         self.email_message.set_content(body)
+
+    def _set_header(self, name, value):
+        del self.email_message[name]
+        self.email_message[name] = value
 
 class Observable:
 
