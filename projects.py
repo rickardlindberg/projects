@@ -23,7 +23,7 @@ class ProjectsApp:
     ...     stdin=Email.create_test_instance(
     ...         from_address="timeline@projects.rickardlindberg.me"
     ...     ).render(),
-    ...     fs={
+    ...     filesystem={
     ...         Database.get_project_path("timeline"): "{}",
     ...     }
     ... )
@@ -62,9 +62,9 @@ class ProjectsApp:
         )
 
     @staticmethod
-    def run_in_test_mode(args=[], stdin="", fs={}):
+    def run_in_test_mode(args=[], stdin="", filesystem={}):
         fs_wrapper = Filesystem.create_null()
-        for path, contents in fs.items():
+        for path, contents in filesystem.items():
             fs_wrapper.write(path, contents)
         app = ProjectsApp(
             args=Args.create_null(args),
@@ -89,11 +89,11 @@ class EmailProcessor:
     """
     I create a conversation when I receive an email to a project address:
 
-    >>> fs, processor = EmailProcessor.create_test_instance()
+    >>> filesystem, processor = EmailProcessor.create_test_instance()
 
     Given a project 'test':
 
-    >>> fs.write("projects/user.json", "{}")
+    >>> filesystem.write("projects/user.json", "{}")
 
     >>> processor.process(Email.create_test_instance())
     Conversation created
@@ -108,9 +108,9 @@ class EmailProcessor:
 
     @staticmethod
     def create_test_instance():
-        fs = Filesystem.create_null()
-        processor = EmailProcessor(fs)
-        return fs, processor
+        filesystem = Filesystem.create_null()
+        processor = EmailProcessor(filesystem)
+        return filesystem, processor
 
     def __init__(self, filesystem):
         self.filesystem = filesystem
@@ -221,10 +221,10 @@ class Filesystem:
 
     @staticmethod
     def create_null():
-        fs = {}
+        in_memory_store = {}
         class NullPath:
             def exists(self, path):
-                return path in fs
+                return path in in_memory_store
         class NullOs:
             path = NullPath()
         class NullBuiltins:
@@ -241,10 +241,10 @@ class Filesystem:
                 self.path = path
         class NullFileRead(NullFile):
             def read(self):
-                return fs[self.path]
+                return in_memory_store[self.path]
         class NullFileWrite(NullFile):
             def write(self, contents):
-                fs[self.path] = contents
+                in_memory_store[self.path] = contents
         return Filesystem(os=NullOs(), builtins=NullBuiltins())
 
     def __init__(self, os, builtins):
@@ -255,21 +255,21 @@ class Filesystem:
         """
         Exists in real world:
 
-        >>> fs = Filesystem.create()
+        >>> filesystem = Filesystem.create()
 
-        >>> fs.exists("README.md")
+        >>> filesystem.exists("README.md")
         True
 
-        >>> fs.exists("non_existing_file")
+        >>> filesystem.exists("non_existing_file")
         False
 
         Exists in null version:
 
-        >>> fs = Filesystem.create_null()
-        >>> fs.exists("non_existing_file")
+        >>> filesystem = Filesystem.create_null()
+        >>> filesystem.exists("non_existing_file")
         False
-        >>> fs.write("non_existing_file", "")
-        >>> fs.exists("non_existing_file")
+        >>> filesystem.write("non_existing_file", "")
+        >>> filesystem.exists("non_existing_file")
         True
         """
         return self.os.path.exists(path)
@@ -278,10 +278,10 @@ class Filesystem:
         """
         >>> tmp_dir = tempfile.TemporaryDirectory()
         >>> tmp_path = os.path.join(tmp_dir.name, "test")
-        >>> fs = Filesystem.create()
+        >>> filesystem = Filesystem.create()
 
         >>> _ = open(tmp_path, "w").write("test content")
-        >>> fs.read(tmp_path)
+        >>> filesystem.read(tmp_path)
         'test content'
         """
         with self.builtins.open(path, "r") as f:
@@ -291,9 +291,9 @@ class Filesystem:
         """
         >>> tmp_dir = tempfile.TemporaryDirectory()
         >>> tmp_path = os.path.join(tmp_dir.name, "test")
-        >>> fs = Filesystem.create()
+        >>> filesystem = Filesystem.create()
 
-        >>> fs.write(tmp_path, "test content")
+        >>> filesystem.write(tmp_path, "test content")
         >>> open(tmp_path).read()
         'test content'
         """
