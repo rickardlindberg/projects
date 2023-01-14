@@ -7,6 +7,7 @@ import email.parser
 import email.policy
 import json
 import os
+import smtplib
 import subprocess
 import sys
 import tempfile
@@ -264,6 +265,7 @@ class Email:
     @staticmethod
     def create_test_instance(
         from_address="user@example.com",
+        to_address="to@example.com",
         body="hello",
         subject="subject"
     ):
@@ -271,6 +273,8 @@ class Email:
         >>> email = Email.create_test_instance()
         >>> email.get_from()
         'user@example.com'
+        >>> email.get_to()
+        'to@example.com'
         >>> email.get_body()
         'hello\\n'
         >>> email.get_subject()
@@ -278,6 +282,7 @@ class Email:
         """
         email = Email()
         email.set_from(from_address)
+        email.set_to(to_address)
         email.set_body(body)
         email.set_subject(subject)
         return email
@@ -305,6 +310,7 @@ class Email:
 
         >>> print(Email.create_test_instance().render())
         From: user@example.com
+        To: to@example.com
         Content-Type: text/plain; charset="utf-8"
         Content-Transfer-Encoding: 7bit
         MIME-Version: 1.0
@@ -321,6 +327,9 @@ class Email:
         else:
             self.email_message = email_message
 
+    def send(self, smtp_server):
+        smtp_server.send(self.email_message)
+
     def get_user(self):
         """
         >>> Email.create_test_instance().get_user()
@@ -332,19 +341,91 @@ class Email:
         return self.email_message["Subject"]
 
     def set_subject(self, subject):
+        del self.email_message["Subject"]
         self.email_message["Subject"] = subject
 
     def get_from(self):
         return self.email_message["From"]
 
     def set_from(self, from_address):
+        del self.email_message["From"]
         self.email_message["From"] = from_address
+
+    def get_to(self):
+        return self.email_message["To"]
+
+    def set_to(self, to_address):
+        del self.email_message["To"]
+        self.email_message["To"] = to_address
 
     def get_body(self):
         return self.email_message.get_content()
 
     def set_body(self, body):
         self.email_message.set_content(body)
+
+class Observable:
+
+    def __init__(self):
+        self.listeners = []
+
+    def add_listener(self, listener):
+        self.listeners.append(listener)
+
+    def notify(self, event):
+        for listener in self.listeners:
+            listener(event)
+
+class Events:
+
+    def __init__(self):
+        self.events = []
+
+    def notify(self, event):
+        self.events.append(event)
+
+    def __repr__(self):
+        return "\n".join(str(x) for x in self.events)
+
+class SMTPServer(Observable):
+
+    """
+    I am an infrastructure wrapper for an SMPT server.
+
+    >>> smtp_server = SMTPServer.create_null()
+    >>> events = Events()
+    >>> smtp_server.add_listener(events.notify)
+    >>> Email.create_test_instance().send(smtp_server)
+    >>> events
+    {'type': 'email', 'to': 'to@example.com'}
+
+    >>> isinstance(SMTPServer.create(), SMTPServer)
+    True
+    """
+
+    @staticmethod
+    def create():
+        return SMTPServer(smtplib=smtplib)
+
+    @staticmethod
+    def create_null():
+        class NullSMTP:
+            def send_message(self, message):
+                pass
+        class NullSmtplib:
+            @contextlib.contextmanager
+            def SMTP(self):
+                yield NullSMTP()
+        return SMTPServer(smtplib=NullSmtplib())
+
+    def __init__(self, smtplib):
+        Observable.__init__(self)
+        self.smtplib = smtplib
+
+    def send(self, email):
+        with self.smtplib.SMTP() as smtp:
+            smtp.send_message(email)
+            self.notify({"type": "email", "to": email["To"]})
 
 class UUID:
 
