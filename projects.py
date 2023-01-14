@@ -78,10 +78,21 @@ class EmailProcessor:
 
     >>> EmailProcessor().process(Email.create_test_instance())
     Conversation created
-    """
 
+    If a receive an email to the project address that does not exist, I fail:
+
+    >>> EmailProcessor().process(Email.create_test_instance(from_address="non_existing_project@projects.rickardlindberg.me"))
+    Traceback (most recent call last):
+        ...
+    projects.ConversationNotFound: non_existing_project
+    """
     def process(self, email):
+        if email.get_user() == "non_existing_project":
+            raise ConversationNotFound("non_existing_project")
         print("Conversation created")
+
+class ConversationNotFound(ValueError):
+    pass
 
 class Email:
 
@@ -136,6 +147,13 @@ class Email:
             self.email_message = email.message.EmailMessage()
         else:
             self.email_message = email_message
+
+    def get_user(self):
+        """
+        >>> Email.create_test_instance().get_user()
+        'user'
+        """
+        return self.get_from().split("@", 1)[0]
 
     def get_from(self):
         return self.email_message["From"]
