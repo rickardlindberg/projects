@@ -49,6 +49,8 @@ chown $USER:$USER /opt/$INSTANCE_NAME
 # Install dependencies
 
 dnf install -y git python3 postfix
+systemctl enable postfix
+systemctl start postfix
 
 # Done
 
