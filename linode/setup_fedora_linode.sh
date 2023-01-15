@@ -30,13 +30,13 @@ chmod 600 /home/$USER/.ssh/authorized_keys
 # Secure SSH
 
 SSHD_CONFIG=/etc/ssh/sshd_config
-secure_ssh() {
+generate_sshd_config() {
     cat $SSHD_CONFIG | grep -v '^PrintLastLog' | grep -v '^PermitRootLogin' | grep -v '^PasswordAuthentication'
     echo "PrintLastLog no"
     echo "PermitRootLogin no"
     echo "PasswordAuthentication no"
 }
-secure_ssh > $SSHD_CONFIG.new
+generate_sshd_config > $SSHD_CONFIG.new
 mv $SSHD_CONFIG.new $SSHD_CONFIG
 chmod 600 $SSHD_CONFIG
 systemctl restart sshd.service
