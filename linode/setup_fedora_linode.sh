@@ -15,10 +15,6 @@ USER_PUBLIC_KEY="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCf2CDrDvB5WV+EK4flL/j6qkO
 INSTANCE_NAME=projects
 DOMAIN=projects.rickardlinberg.me
 
-# Set hostname
-
-hostnamectl set-hostname $INSTANCE_NAME.$DOMAIN
-
 # Add user
 
 if ! id $USER; then
@@ -56,6 +52,11 @@ chown $USER:$USER /opt/$INSTANCE_NAME
 dnf install -y git python3 postfix
 systemctl enable postfix
 systemctl start postfix
+
+# Set hostname
+
+hostnamectl set-hostname $DOMAIN
+systemctl restart postfix
 
 # Done
 
