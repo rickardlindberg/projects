@@ -13,6 +13,11 @@ set -e
 USER=projects
 USER_PUBLIC_KEY=$(cat ~/.ssh/id_rsa.pub)
 INSTANCE_NAME=projects
+DOMAIN=projects.rickardlinberg.me
+
+# Set hostname
+
+hostnamectl set-hostname $INSTANCE_NAME.$DOMAIN
 
 # Add user
 
