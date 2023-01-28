@@ -245,20 +245,17 @@ class DatabaseEntity:
 class ProjectEntity(DatabaseEntity):
 
     def __init__(self, filesystem, store, name):
-        DatabaseEntity.__init__(self, filesystem, store, "")
+        DatabaseEntity.__init__(self, filesystem, store, f"projects/{name}/index.json")
         self.name = name
 
-    def index(self):
-        return f"projects/{self.name}/index.json"
-
     def exists(self):
-        return self.filesystem.exists(self.index())
+        return self.filesystem.exists(self.path)
 
     def load(self):
-        return self.store.load(self.index())
+        return self.store.load(self.path)
 
     def create(self):
-        self.filesystem.write(self.index(), "{}")
+        self.filesystem.write(self.path, "{}")
 
     def create_conversation(self, subject, raw_email):
         conversation_id = self.store.create(
@@ -286,10 +283,10 @@ class ProjectEntity(DatabaseEntity):
         return self.email(self.store.uuid.get()).create(raw_email)
 
     def add_watcher(self, email):
-        self.store.append(self.index(), "watchers", email)
+        self.store.append(self.path, "watchers", email)
 
     def get_watchers(self):
-        return self.store.load(self.index()).get("watchers", [])
+        return self.store.load(self.path).get("watchers", [])
 
     def conversation(self, conversation_id):
         return ConversationEntity(self.filesystem, self.store, self.name, conversation_id)
