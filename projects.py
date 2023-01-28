@@ -28,11 +28,11 @@ class ProjectsApp:
     ...         to_address="timeline@projects.rickardlindberg.me"
     ...     ).render(),
     ...     database_inits=[
-    ...         lambda db: db.create_project("timeline"),
+    ...         lambda db: db.project("timeline").create(),
     ...     ]
     ... )
 
-    >>> len(database.get_project("timeline")["conversations"])
+    >>> len(database.project("timeline").load()["conversations"])
     1
 
     NOTE: We just want to assert that the email was processed somehow. Details
@@ -46,7 +46,7 @@ class ProjectsApp:
     >>> database = ProjectsApp.run_in_test_mode(
     ...     args=["create_project", "timeline"],
     ... )
-    >>> database.get_project("timeline")
+    >>> database.project("timeline").load()
     {}
 
     Project watching
@@ -57,10 +57,10 @@ class ProjectsApp:
     >>> database = ProjectsApp.run_in_test_mode(
     ...     args=["watch_project", "timeline", "watcher@example.com"],
     ...     database_inits=[
-    ...         lambda db: db.create_project("timeline"),
+    ...         lambda db: db.project("timeline").create(),
     ...     ]
     ... )
-    >>> database.get_project("timeline")["watchers"]
+    >>> database.project("timeline").load()["watchers"]
     ['watcher@example.com']
 
     Unknown commands
@@ -127,10 +127,10 @@ class ProjectsApp:
             ).process(self.stdin.read())
         elif self.args.get()[:1] == ["create_project"]:
             name = self.args.get()[1]
-            self.database.create_project(name)
+            self.database.project(name).create()
         elif self.args.get()[:1] == ["watch_project"]:
             name, email = self.args.get()[1:]
-            self.database.watch_project(name, email)
+            self.database.project(name).add_watcher(email)
         else:
             sys.exit(f"Unknown command {self.args.get()}")
 
@@ -159,9 +159,9 @@ class EmailProcessor:
         I create a new conversation in a project:
 
         >>> database, events, processor = EmailProcessor.create_test_instance()
-        >>> database.create_project("timeline")
-        >>> database.watch_project("timeline", "watcher1@example.com")
-        >>> database.watch_project("timeline", "watcher2@example.com")
+        >>> database.project("timeline").create()
+        >>> database.project("timeline").add_watcher("watcher1@example.com")
+        >>> database.project("timeline").add_watcher("watcher2@example.com")
 
         >>> raw_email = Email.create_test_instance(
         ...     to_address="timeline@projects.rickardlindberg.me",
@@ -202,20 +202,16 @@ class EmailProcessor:
             path: 'projects/timeline/index.json'
             contents: '{"watchers": ["watcher1@example.com", "watcher2@example.com"], "conversations": [{"id": "uuid3"}]}'
 
-        >>> database.get_project("timeline")["conversations"]
+        >>> database.project("timeline").load()["conversations"]
         [{'id': 'uuid3'}]
 
-        >>> database.get_conversation("timeline", "uuid3")
+        >>> database.project("timeline").conversation("uuid3").load()
         {'subject': 'Hello World!', 'entries': [{'id': 'uuid2'}]}
 
         >>> base64.b64decode(
-        ...     database.get_email(
-        ...         "timeline",
-        ...         database.get_conversation_entry(
-        ...             "timeline",
-        ...             "uuid2"
-        ...         )["source_email"]
-        ...     )["raw_email"]
+        ...     database.project("timeline").email(
+        ...         database.project("timeline").conversation_entry("uuid2").load()["source_email"]
+        ...     ).load()["raw_email"]
         ... ) == raw_email
         True
 
@@ -230,14 +226,119 @@ class EmailProcessor:
         """
         email = Email.parse(raw_email)
         project = email.get_user()
-        if not self.db.project_exists(project):
+        if not self.db.project(project).exists():
             raise ProjectNotFound(project)
-        conversation_id = self.db.create_conversation(project, email.get_subject(), raw_email)
-        for watcher in self.db.get_project_watchers(project):
+        conversation = self.db.project(project).create_conversation(email.get_subject(), raw_email)
+        for watcher in self.db.project(project).get_watchers():
             email.set_to(watcher)
             email.set_from(f"{project}@projects.rickardlindberg.me")
-            email.set_reply_to(f"{project}+{conversation_id}@projects.rickardlindberg.me")
+            email.set_reply_to(f"{project}+{conversation.id}@projects.rickardlindberg.me")
             email.send(self.smtp_server)
+
+class DatabaseEntity:
+
+    def __init__(self, filesystem, store, path):
+        self.filesystem = filesystem
+        self.store = store
+        self.path = path
+
+class ProjectEntity(DatabaseEntity):
+
+    def __init__(self, filesystem, store, name):
+        DatabaseEntity.__init__(self, filesystem, store, "")
+        self.name = name
+
+    def index(self):
+        return f"projects/{self.name}/index.json"
+
+    def exists(self):
+        return self.filesystem.exists(self.index())
+
+    def load(self):
+        return self.store.load(self.index())
+
+    def create(self):
+        self.filesystem.write(self.index(), "{}")
+
+    def create_conversation(self, subject, raw_email):
+        conversation_id = self.store.create(
+            f"projects/{self.name}/conversations/",
+            {
+                "subject": subject,
+                "entries": [{
+                    "id": self.store.create(
+                        f"projects/{self.name}/conversations/entries/",
+                        {
+                            "source_email": self.create_email(raw_email).email_id,
+                        }
+                    )
+                }]
+            }
+        )
+        self.store.append(
+            f"projects/{self.name}/index.json",
+            "conversations",
+            {"id": conversation_id}
+        )
+        return self.conversation(conversation_id)
+
+    def create_email(self, raw_email):
+        return self.email(self.store.uuid.get()).create(raw_email)
+
+    def add_watcher(self, email):
+        self.store.append(self.index(), "watchers", email)
+
+    def get_watchers(self):
+        return self.store.load(self.index()).get("watchers", [])
+
+    def conversation(self, conversation_id):
+        return ConversationEntity(self.filesystem, self.store, self.name, conversation_id)
+
+    def conversation_entry(self, entry_id):
+        return ConversationEntryEntity(self.filesystem, self.store, self.name, entry_id)
+
+    def email(self, email_id):
+        return EmailEntity(self.filesystem, self.store, self.name, email_id)
+
+class ConversationEntity(DatabaseEntity):
+
+    def __init__(self, filesystem, store, project_name, conversation_id):
+        DatabaseEntity.__init__(self, filesystem, store, f"projects/{project_name}/conversations/{conversation_id}.json")
+        self.project_name = project_name
+        self.id = conversation_id
+
+    def load(self):
+        return self.store.load(self.path)
+
+class ConversationEntryEntity(DatabaseEntity):
+
+    def __init__(self, filesystem, store, project_name, entry_id):
+        DatabaseEntity.__init__(self, filesystem, store, f"projects/{project_name}/conversations/entries/{entry_id}.json")
+        self.project_name = project_name
+        self.entry_id = entry_id
+
+    def load(self):
+        return self.store.load(self.path)
+
+class EmailEntity(DatabaseEntity):
+
+    def __init__(self, filesystem, store, project_name, email_id):
+        DatabaseEntity.__init__(self, filesystem, store, f"projects/{project_name}/emails/{email_id}.json")
+        self.project_name = project_name
+        self.email_id = email_id
+
+    def load(self):
+        return self.store.load(self.path)
+
+    def create(self, raw_email):
+        self.store.create(
+            os.path.dirname(self.path),
+            {
+                "raw_email": base64.b64encode(raw_email).decode("ascii"),
+            },
+            object_id=self.email_id
+        )
+        return self
 
 class Database:
 
@@ -245,59 +346,8 @@ class Database:
         self.filesystem = filesystem
         self.store = JsonStore(filesystem, uuid)
 
-    def get_project(self, name):
-        return self.store.load(f"projects/{name}/index.json")
-
-    def create_project(self, name):
-        self.filesystem.write(f"projects/{name}/index.json", "{}")
-
-    def project_exists(self, name):
-        return self.filesystem.exists(f"projects/{name}/index.json")
-
-    def watch_project(self, name, email):
-        self.store.append(f"projects/{name}/index.json", "watchers", email)
-
-    def get_project_watchers(self, name):
-        return self.store.load(f"projects/{name}/index.json").get("watchers", [])
-
-    def get_conversation(self, name, conversation_id):
-        return self.store.load(f"projects/{name}/conversations/{conversation_id}.json")
-
-    def store_email(self, project, raw_email):
-        return self.store.create(
-            f"projects/{project}/emails/",
-            {
-                "raw_email": base64.b64encode(raw_email).decode("ascii"),
-            }
-        )
-
-    def get_email(self, project, email_id):
-        return self.store.load(f"projects/{project}/emails/{email_id}.json")
-
-    def create_conversation(self, project, subject, raw_email):
-        conversation_id = self.store.create(
-            f"projects/{project}/conversations/",
-            {
-                "subject": subject,
-                "entries": [{
-                    "id": self.store.create(
-                        f"projects/{project}/conversations/entries/",
-                        {
-                            "source_email": self.store_email(project, raw_email),
-                        }
-                    )
-                }]
-            }
-        )
-        self.store.append(
-            f"projects/{project}/index.json",
-            "conversations",
-            {"id": conversation_id}
-        )
-        return conversation_id
-
-    def get_conversation_entry(self, project_name, entry_id):
-        return self.store.load(f"projects/{project_name}/conversations/entries/{entry_id}.json")
+    def project(self, name):
+        return ProjectEntity(self.filesystem, self.store, name)
 
 class JsonStore:
 
