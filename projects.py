@@ -424,6 +424,11 @@ class Observable:
         for listener in self.listeners:
             listener(event)
 
+    def track_events(self):
+        events = Events()
+        self.add_listener(events.notify)
+        return events
+
 class Events:
 
     def __init__(self):
@@ -534,7 +539,7 @@ class UUID:
     def get(self):
         return self.uuid.uuid4().hex
 
-class Filesystem:
+class Filesystem(Observable):
 
     """
     I am an infrastructure wrapper for working with the filesystem.
@@ -575,6 +580,7 @@ class Filesystem:
         return Filesystem(os=NullOs(), builtins=NullBuiltins())
 
     def __init__(self, os, builtins):
+        Observable.__init__(self)
         self.os = os
         self.builtins = builtins
 
@@ -624,12 +630,23 @@ class Filesystem:
         >>> filesystem.write(tmp_path, "test content")
         >>> open(tmp_path).read()
         'test content'
+
+        I log writes:
+
+        >>> filesystem = Filesystem.create_null()
+        >>> events = filesystem.track_events()
+        >>> filesystem.write("foo", "contents")
+        >>> events
+        write =>
+            path: 'foo'
+            contents: 'contents'
         """
         dir_path = os.path.dirname(path)
         if not self.exists(dir_path):
             self.os.makedirs(dir_path)
         with self.builtins.open(path, "w") as f:
             f.write(contents)
+        self.notify({"type": "write", "path": path, "contents": contents})
 
 class Stdin:
 
