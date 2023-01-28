@@ -229,7 +229,7 @@ class EmailProcessor:
         if not self.db.project(project).exists():
             raise ProjectNotFound(project)
         conversation = self.db.project(project).create_conversation(email.get_subject(), raw_email)
-        for watcher in self.db.project(project).get_watchers():
+        for watcher in self.db.project(project).load().get("watchers", []):
             email.set_to(watcher)
             email.set_from(f"{project}@projects.rickardlindberg.me")
             email.set_reply_to(f"{project}+{conversation.id}@projects.rickardlindberg.me")
@@ -237,24 +237,28 @@ class EmailProcessor:
 
 class DatabaseEntity:
 
-    def __init__(self, store, path):
+    def __init__(self, store, path, entity_id):
         self.store = store
-        self.path = path
+        self.namespace = path
+        self.id = entity_id
+
+    def load(self):
+        return self.store.load(self.namespace, self.id)
+
+    def exists(self):
+        return self.store.exists(self.namespace, self.id)
+
+    def create(self, data):
+        self.id = self.store.create(self.namespace, data, self.id)
 
 class ProjectEntity(DatabaseEntity):
 
     def __init__(self, store, name):
-        DatabaseEntity.__init__(self, store, f"projects/{name}/index.json")
+        DatabaseEntity.__init__(self, store, f"projects/{name}", "index")
         self.name = name
 
-    def exists(self):
-        return self.store.exists(os.path.dirname(self.path), "index")
-
-    def load(self):
-        return self.store.load(self.path)
-
     def create(self):
-        self.store.create(os.path.dirname(self.path), {}, "index")
+        DatabaseEntity.create(self, {})
 
     def create_conversation(self, subject, raw_email):
         conversation_id = self.store.create(
@@ -265,24 +269,22 @@ class ProjectEntity(DatabaseEntity):
                     "id": self.store.create(
                         f"projects/{self.name}/conversations/entries/",
                         {
-                            "source_email": self.email(self.store.uuid.get()).create(raw_email).email_id
+                            "source_email": self.email(None).create(raw_email).id
                         }
                     )
                 }]
             }
         )
         self.store.append(
-            f"projects/{self.name}/index.json",
+            self.namespace,
+            self.id,
             "conversations",
             {"id": conversation_id}
         )
         return self.conversation(conversation_id)
 
     def add_watcher(self, email):
-        self.store.append(self.path, "watchers", email)
-
-    def get_watchers(self):
-        return self.store.load(self.path).get("watchers", [])
+        self.store.append(self.namespace, self.id, "watchers", email)
 
     def conversation(self, conversation_id):
         return ConversationEntity(self.store, self.name, conversation_id)
@@ -296,41 +298,25 @@ class ProjectEntity(DatabaseEntity):
 class ConversationEntity(DatabaseEntity):
 
     def __init__(self, store, project_name, conversation_id):
-        DatabaseEntity.__init__(self, store, f"projects/{project_name}/conversations/{conversation_id}.json")
-        self.project_name = project_name
-        self.id = conversation_id
-
-    def load(self):
-        return self.store.load(self.path)
+        DatabaseEntity.__init__(self, store,
+            f"projects/{project_name}/conversations", conversation_id)
 
 class ConversationEntryEntity(DatabaseEntity):
 
     def __init__(self, store, project_name, entry_id):
-        DatabaseEntity.__init__(self, store, f"projects/{project_name}/conversations/entries/{entry_id}.json")
-        self.project_name = project_name
-        self.entry_id = entry_id
-
-    def load(self):
-        return self.store.load(self.path)
+        DatabaseEntity.__init__(self, store,
+            f"projects/{project_name}/conversations/entries", entry_id)
 
 class EmailEntity(DatabaseEntity):
 
     def __init__(self, store, project_name, email_id):
-        DatabaseEntity.__init__(self, store, f"projects/{project_name}/emails/{email_id}.json")
-        self.project_name = project_name
-        self.email_id = email_id
-
-    def load(self):
-        return self.store.load(self.path)
+        DatabaseEntity.__init__(self, store,
+            f"projects/{project_name}/emails", email_id)
 
     def create(self, raw_email):
-        self.store.create(
-            os.path.dirname(self.path),
-            {
-                "raw_email": base64.b64encode(raw_email).decode("ascii"),
-            },
-            object_id=self.email_id
-        )
+        DatabaseEntity.create(self, {
+            "raw_email": base64.b64encode(raw_email).decode("ascii"),
+        })
         return self
 
 class Database:
@@ -347,24 +333,24 @@ class JsonStore:
         self.filesystem = filesystem
         self.uuid = uuid
 
-    def exists(self, path, object_id):
-        return self.filesystem.exists(self.path(path, object_id))
+    def exists(self, namespace, object_id):
+        return self.filesystem.exists(self.path(namespace, object_id))
 
-    def load(self, path):
-        return json.loads(self.filesystem.read(path))
+    def load(self, namespace, object_id):
+        return json.loads(self.filesystem.read(self.path(namespace, object_id)))
 
-    def append(self, path, key, item):
-        x = self.load(path)
+    def append(self, namespace, object_id, key, item):
+        x = self.load(namespace, object_id)
         if key not in x:
             x[key] = []
         x[key].append(item)
-        self.filesystem.write(path, json.dumps(x))
+        self.filesystem.write(self.path(namespace, object_id), json.dumps(x))
 
-    def create(self, path, data, object_id=None):
+    def create(self, namespace, data, object_id=None):
         if object_id is None:
             object_id = self.uuid.get()
         self.filesystem.write(
-            self.path(path, object_id),
+            self.path(namespace, object_id),
             json.dumps(data)
         )
         return object_id
