@@ -181,16 +181,16 @@ class EmailProcessor:
 
         >>> events.filter("FILE_WRITTEN")
         FILE_WRITTEN =>
-            path: 'projects/timeline.json'
+            path: 'projects/timeline/index.json'
             contents: '{}'
         FILE_WRITTEN =>
-            path: 'projects/timeline.json'
+            path: 'projects/timeline/index.json'
             contents: '{"watchers": ["watcher1@example.com"]}'
         FILE_WRITTEN =>
-            path: 'projects/timeline.json'
+            path: 'projects/timeline/index.json'
             contents: '{"watchers": ["watcher1@example.com", "watcher2@example.com"]}'
         FILE_WRITTEN =>
-            path: 'emails/uuid1.json'
+            path: 'projects/timeline/emails/uuid1.json'
             contents: '{"raw_email": "RnJvbTogdXNlckBleGFtcGxlLmNvbQpUbzogdGltZWxpbmVAcHJvamVjdHMucmlja2FyZGxpbmRiZXJnLm1lCkNvbnRlbnQtVHlwZTogdGV4dC9wbGFpbjsgY2hhcnNldD0idXRmLTgiCkNvbnRlbnQtVHJhbnNmZXItRW5jb2Rpbmc6IDdiaXQKTUlNRS1WZXJzaW9uOiAxLjAKU3ViamVjdDogSGVsbG8gV29ybGQhCgpoZWxsbwo="}'
         FILE_WRITTEN =>
             path: 'projects/timeline/conversations/entries/uuid2.json'
@@ -199,7 +199,7 @@ class EmailProcessor:
             path: 'projects/timeline/conversations/uuid3.json'
             contents: '{"subject": "Hello World!", "entries": [{"id": "uuid2"}]}'
         FILE_WRITTEN =>
-            path: 'projects/timeline.json'
+            path: 'projects/timeline/index.json'
             contents: '{"watchers": ["watcher1@example.com", "watcher2@example.com"], "conversations": [{"id": "uuid3"}]}'
 
         >>> database.get_project("timeline")["conversations"]
@@ -210,6 +210,7 @@ class EmailProcessor:
 
         >>> base64.b64decode(
         ...     database.get_email(
+        ...         "timeline",
         ...         database.get_conversation_entry(
         ...             "timeline",
         ...             "uuid2"
@@ -245,33 +246,33 @@ class Database:
         self.store = JsonStore(filesystem, uuid)
 
     def get_project(self, name):
-        return self.store.load(f"projects/{name}.json")
+        return self.store.load(f"projects/{name}/index.json")
 
     def create_project(self, name):
-        self.filesystem.write(f"projects/{name}.json", "{}")
+        self.filesystem.write(f"projects/{name}/index.json", "{}")
 
     def project_exists(self, name):
-        return self.filesystem.exists(f"projects/{name}.json")
+        return self.filesystem.exists(f"projects/{name}/index.json")
 
     def watch_project(self, name, email):
-        self.store.append(f"projects/{name}.json", "watchers", email)
+        self.store.append(f"projects/{name}/index.json", "watchers", email)
 
     def get_project_watchers(self, name):
-        return self.store.load(f"projects/{name}.json").get("watchers", [])
+        return self.store.load(f"projects/{name}/index.json").get("watchers", [])
 
     def get_conversation(self, name, conversation_id):
         return self.store.load(f"projects/{name}/conversations/{conversation_id}.json")
 
-    def store_email(self, raw_email):
+    def store_email(self, project, raw_email):
         return self.store.create(
-            f"emails/",
+            f"projects/{project}/emails/",
             {
                 "raw_email": base64.b64encode(raw_email).decode("ascii"),
             }
         )
 
-    def get_email(self, email_id):
-        return self.store.load(f"emails/{email_id}.json")
+    def get_email(self, project, email_id):
+        return self.store.load(f"projects/{project}/emails/{email_id}.json")
 
     def create_conversation(self, project, subject, raw_email):
         conversation_id = self.store.create(
@@ -282,14 +283,14 @@ class Database:
                     "id": self.store.create(
                         f"projects/{project}/conversations/entries/",
                         {
-                            "source_email": self.store_email(raw_email),
+                            "source_email": self.store_email(project, raw_email),
                         }
                     )
                 }]
             }
         )
         self.store.append(
-            f"projects/{project}.json",
+            f"projects/{project}/index.json",
             "conversations",
             {"id": conversation_id}
         )
