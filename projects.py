@@ -266,7 +266,7 @@ class ProjectEntity(DatabaseEntity):
                     "id": self.store.create(
                         f"projects/{self.name}/conversations/entries/",
                         {
-                            "source_email": self.create_email(raw_email).email_id,
+                            "source_email": self.email(self.store.uuid.get()).create(raw_email).email_id
                         }
                     )
                 }]
@@ -278,9 +278,6 @@ class ProjectEntity(DatabaseEntity):
             {"id": conversation_id}
         )
         return self.conversation(conversation_id)
-
-    def create_email(self, raw_email):
-        return self.email(self.store.uuid.get()).create(raw_email)
 
     def add_watcher(self, email):
         self.store.append(self.path, "watchers", email)
