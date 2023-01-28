@@ -142,9 +142,8 @@ class EmailProcessor:
             filesystem=Filesystem.create_null(),
             uuid=UUID.create_null()
         )
-        events = Events()
         smtp_server = SMTPServer.create_null()
-        smtp_server.add_listener(events.notify)
+        events = smtp_server.track_events()
         processor = EmailProcessor(
             database=database,
             smtp_server=smtp_server,
@@ -170,11 +169,11 @@ class EmailProcessor:
         ... ).render()
         >>> processor.process(raw_email)
         >>> events
-        email =>
+        EMAIL_SENT =>
             from: 'timeline@projects.rickardlindberg.me'
             reply-to: 'timeline+uuid3@projects.rickardlindberg.me'
             to: 'watcher1@example.com'
-        email =>
+        EMAIL_SENT =>
             from: 'timeline@projects.rickardlindberg.me'
             reply-to: 'timeline+uuid3@projects.rickardlindberg.me'
             to: 'watcher2@example.com'
@@ -420,13 +419,13 @@ class Observable:
     def add_listener(self, listener):
         self.listeners.append(listener)
 
-    def notify(self, event):
+    def notify(self, name, event):
         for listener in self.listeners:
-            listener(event)
+            listener.notify(name, event)
 
     def track_events(self):
         events = Events()
-        self.add_listener(events.notify)
+        self.add_listener(events)
         return events
 
 class Events:
@@ -434,20 +433,17 @@ class Events:
     def __init__(self):
         self.events = []
 
-    def notify(self, event):
-        self.events.append(event)
+    def notify(self, name, data):
+        self.events.append((name, data))
 
     def __repr__(self):
-        def format_event(event):
-            if isinstance(event, dict) and "type" in event:
-                part = []
-                for key, value in event.items():
-                    if key != "type":
-                        part.append(f"\n    {key}: {repr(value)}")
-                return f"{event['type']} =>{''.join(part)}"
-            else:
-                return str(x)
-        return "\n".join(format_event(x) for x in self.events)
+        def format_event(name, data):
+            part = []
+            for key, value in data.items():
+                if key != "type":
+                    part.append(f"\n    {key}: {repr(value)}")
+            return f"{name} =>{''.join(part)}"
+        return "\n".join(format_event(name, data) for name, data in self.events)
 
 class SMTPServer(Observable):
 
@@ -455,11 +451,10 @@ class SMTPServer(Observable):
     I am an infrastructure wrapper for an SMPT server.
 
     >>> smtp_server = SMTPServer.create_null()
-    >>> events = Events()
-    >>> smtp_server.add_listener(events.notify)
+    >>> events = smtp_server.track_events()
     >>> Email.create_test_instance().send(smtp_server)
     >>> events
-    email =>
+    EMAIL_SENT =>
         from: 'user@example.com'
         reply-to: None
         to: 'to@example.com'
@@ -490,8 +485,7 @@ class SMTPServer(Observable):
     def send(self, email):
         with self.smtplib.SMTP(host="localhost") as smtp:
             smtp.send_message(email)
-            self.notify({
-                "type": "email",
+            self.notify("EMAIL_SENT", {
                 "from": email["From"],
                 "reply-to": email["Reply-To"],
                 "to": email["To"],
@@ -637,7 +631,7 @@ class Filesystem(Observable):
         >>> events = filesystem.track_events()
         >>> filesystem.write("foo", "contents")
         >>> events
-        write =>
+        FILE_WRITTEN =>
             path: 'foo'
             contents: 'contents'
         """
@@ -646,7 +640,7 @@ class Filesystem(Observable):
             self.os.makedirs(dir_path)
         with self.builtins.open(path, "w") as f:
             f.write(contents)
-        self.notify({"type": "write", "path": path, "contents": contents})
+        self.notify("FILE_WRITTEN", {"path": path, "contents": contents})
 
 class Stdin:
 
