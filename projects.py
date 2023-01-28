@@ -172,21 +172,26 @@ class EmailProcessor:
         >>> events
         email =>
             from: 'timeline@projects.rickardlindberg.me'
-            reply-to: 'timeline+uuid2@projects.rickardlindberg.me'
+            reply-to: 'timeline+uuid3@projects.rickardlindberg.me'
             to: 'watcher1@example.com'
         email =>
             from: 'timeline@projects.rickardlindberg.me'
-            reply-to: 'timeline+uuid2@projects.rickardlindberg.me'
+            reply-to: 'timeline+uuid3@projects.rickardlindberg.me'
             to: 'watcher2@example.com'
 
         >>> database.get_project("timeline")["conversations"]
-        [{'id': 'uuid2'}]
+        [{'id': 'uuid3'}]
 
-        >>> database.get_conversation("timeline", "uuid2")
-        {'subject': 'Hello World!', 'entries': [{'id': 'uuid1'}]}
+        >>> database.get_conversation("timeline", "uuid3")
+        {'subject': 'Hello World!', 'entries': [{'id': 'uuid2'}]}
 
         >>> base64.b64decode(
-        ...     database.get_conversation_entry("timeline", "uuid1")["source_email"]
+        ...     database.get_email(
+        ...         database.get_conversation_entry(
+        ...             "timeline",
+        ...             "uuid2"
+        ...         )["source_email"]
+        ...     )["raw_email"]
         ... ) == raw_email
         True
 
@@ -234,6 +239,17 @@ class Database:
     def get_conversation(self, name, conversation_id):
         return self.store.load(f"projects/{name}/conversations/{conversation_id}.json")
 
+    def store_email(self, raw_email):
+        return self.store.create(
+            f"emails/",
+            {
+                "raw_email": base64.b64encode(raw_email).decode("ascii"),
+            }
+        )
+
+    def get_email(self, email_id):
+        return self.store.load(f"emails/{email_id}.json")
+
     def create_conversation(self, project, subject, raw_email):
         conversation_id = self.store.create(
             f"projects/{project}/conversations/",
@@ -243,7 +259,7 @@ class Database:
                     "id": self.store.create(
                         f"projects/{project}/conversations/entries/",
                         {
-                            "source_email": base64.b64encode(raw_email).decode("ascii"),
+                            "source_email": self.store_email(raw_email),
                         }
                     )
                 }]
