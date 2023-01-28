@@ -58,6 +58,10 @@ systemctl start postfix
 hostnamectl set-hostname $DOMAIN
 systemctl restart postfix
 
+# RDNS
+
+echo "Manually set up RDNS in the Linode GUI to $DOMAIN"
+
 # Done
 
 echo "Setup OK!"
