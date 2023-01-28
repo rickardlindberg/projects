@@ -45,3 +45,25 @@ Limitations:
 * Incoming emails can be added manually
 * Projects can be created manually
 * Watchers can be added manually
+
+## Notes on sending emails
+
+Sending emails is tricky. Or rather, it is tricky to get email servers to trust
+the emails you send and not treat it as spam.
+
+Here are some notes on how to improve your credebility.
+
+### Reverse DNS
+
+From [Best practices for SMTP servers](https://www.fastmail.help/hc/en-us/articles/1500000278362-Best-practices-for-SMTP-servers):
+
+> Forward and reverse DNS must match
+
+> HELO string must match reverse DNS
+
+In `linode/setup_fedora_linode.sh` I setup the hostname to be the fully
+qualified domain name.
+
+I belive postfix uses that in the `HELO` string.
+
+Reverse DNS for a Linode can be configured in their user interface.
