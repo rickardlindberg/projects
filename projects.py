@@ -138,12 +138,12 @@ class EmailProcessor:
 
     @staticmethod
     def create_test_instance():
+        events = Events()
         database = Database(
-            filesystem=Filesystem.create_null(),
+            filesystem=events.track(Filesystem.create_null()),
             uuid=UUID.create_null()
         )
-        smtp_server = SMTPServer.create_null()
-        events = smtp_server.track_events()
+        smtp_server = events.track(SMTPServer.create_null())
         processor = EmailProcessor(
             database=database,
             smtp_server=smtp_server,
@@ -168,7 +168,8 @@ class EmailProcessor:
         ...     subject="Hello World!",
         ... ).render()
         >>> processor.process(raw_email)
-        >>> events
+
+        >>> events.filter("EMAIL_SENT")
         EMAIL_SENT =>
             from: 'timeline@projects.rickardlindberg.me'
             reply-to: 'timeline+uuid3@projects.rickardlindberg.me'
@@ -177,6 +178,29 @@ class EmailProcessor:
             from: 'timeline@projects.rickardlindberg.me'
             reply-to: 'timeline+uuid3@projects.rickardlindberg.me'
             to: 'watcher2@example.com'
+
+        >>> events.filter("FILE_WRITTEN")
+        FILE_WRITTEN =>
+            path: 'projects/timeline.json'
+            contents: '{}'
+        FILE_WRITTEN =>
+            path: 'projects/timeline.json'
+            contents: '{"watchers": ["watcher1@example.com"]}'
+        FILE_WRITTEN =>
+            path: 'projects/timeline.json'
+            contents: '{"watchers": ["watcher1@example.com", "watcher2@example.com"]}'
+        FILE_WRITTEN =>
+            path: 'emails/uuid1.json'
+            contents: '{"raw_email": "RnJvbTogdXNlckBleGFtcGxlLmNvbQpUbzogdGltZWxpbmVAcHJvamVjdHMucmlja2FyZGxpbmRiZXJnLm1lCkNvbnRlbnQtVHlwZTogdGV4dC9wbGFpbjsgY2hhcnNldD0idXRmLTgiCkNvbnRlbnQtVHJhbnNmZXItRW5jb2Rpbmc6IDdiaXQKTUlNRS1WZXJzaW9uOiAxLjAKU3ViamVjdDogSGVsbG8gV29ybGQhCgpoZWxsbwo="}'
+        FILE_WRITTEN =>
+            path: 'projects/timeline/conversations/entries/uuid2.json'
+            contents: '{"source_email": "uuid1"}'
+        FILE_WRITTEN =>
+            path: 'projects/timeline/conversations/uuid3.json'
+            contents: '{"subject": "Hello World!", "entries": [{"id": "uuid2"}]}'
+        FILE_WRITTEN =>
+            path: 'projects/timeline.json'
+            contents: '{"watchers": ["watcher1@example.com", "watcher2@example.com"], "conversations": [{"id": "uuid3"}]}'
 
         >>> database.get_project("timeline")["conversations"]
         [{'id': 'uuid3'}]
@@ -435,6 +459,17 @@ class Events:
 
     def notify(self, name, data):
         self.events.append((name, data))
+
+    def track(self, observable):
+        observable.add_listener(self)
+        return observable
+
+    def filter(self, filter_name):
+        events = Events()
+        for name, data in self.events:
+            if name == filter_name:
+                events.notify(name, data)
+        return events
 
     def __repr__(self):
         def format_event(name, data):
