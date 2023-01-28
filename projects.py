@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import base64
 import builtins
 import contextlib
 import email.message
@@ -96,7 +97,7 @@ class ProjectsApp:
         )
 
     @staticmethod
-    def run_in_test_mode(args=[], stdin="", database_inits=[]):
+    def run_in_test_mode(args=[], stdin=b"", database_inits=[]):
         database = Database(
             filesystem=Filesystem.create_null(),
             uuid=UUID.create_null()
@@ -184,7 +185,9 @@ class EmailProcessor:
         >>> database.get_conversation("timeline", "uuid2")
         {'subject': 'Hello World!', 'entries': [{'id': 'uuid1'}]}
 
-        >>> database.get_conversation_entry("timeline", "uuid1")["source_email"] == raw_email
+        >>> base64.b64decode(
+        ...     database.get_conversation_entry("timeline", "uuid1")["source_email"]
+        ... ) == raw_email
         True
 
         If the project does not exists, I fail:
@@ -240,7 +243,7 @@ class Database:
                     "id": self.store.create(
                         f"projects/{project}/conversations/entries/",
                         {
-                            "source_email": raw_email,
+                            "source_email": base64.b64encode(raw_email).decode("ascii"),
                         }
                     )
                 }]
@@ -326,13 +329,14 @@ class Email:
         >>> email.get_subject()
         'foo'
         """
-        return Email(email.parser.Parser(policy=email.policy.default).parsestr(text))
+        parser = email.parser.BytesParser(policy=email.policy.default)
+        return Email(parser.parsebytes(text))
 
     def render(self):
         """
         Can render emails:
 
-        >>> print(Email.create_test_instance().render())
+        >>> print(Email.create_test_instance().render().decode("ascii"))
         From: user@example.com
         To: to@example.com
         Content-Type: text/plain; charset="utf-8"
@@ -343,7 +347,7 @@ class Email:
         hello
         <BLANKLINE>
         """
-        return str(self.email_message)
+        return self.email_message.as_bytes()
 
     def __init__(self, email_message=None):
         if email_message is None:
@@ -621,12 +625,12 @@ class Stdin:
     ...     "from projects import Stdin;"
     ...         "print(Stdin.create().read())",
     ... ], input="test", stdout=subprocess.PIPE, text=True).stdout.strip())
-    test
+    b'test'
 
     I can configure what stdin is:
 
-    >>> Stdin.create_null("configured response").read()
-    'configured response'
+    >>> Stdin.create_null(b"configured response").read()
+    b'configured response'
     """
 
     @staticmethod
@@ -635,9 +639,12 @@ class Stdin:
 
     @staticmethod
     def create_null(response):
-        class NullStdin:
+        assert isinstance(response, bytes)
+        class NullBuffer:
             def read(self):
                 return response
+        class NullStdin:
+            buffer = NullBuffer()
         class NullSys:
             stdin = NullStdin()
         return Stdin(sys=NullSys())
@@ -646,7 +653,7 @@ class Stdin:
         self.sys = sys
 
     def read(self):
-        return self.sys.stdin.read()
+        return self.sys.stdin.buffer.read()
 
 class Args:
 
