@@ -89,19 +89,19 @@ class ProjectsApp:
         return ProjectsApp(
             args=Args.create(),
             stdin=Stdin.create(),
-            database=Database(
+            database=Database(JsonStore(
                 filesystem=Filesystem.create(),
                 uuid=UUID.create(),
-            ),
+            )),
             smtp_server=SMTPServer.create()
         )
 
     @staticmethod
     def run_in_test_mode(args=[], stdin=b"", database_inits=[]):
-        database = Database(
+        database = Database(JsonStore(
             filesystem=Filesystem.create_null(),
             uuid=UUID.create_null()
-        )
+        ))
         for x in database_inits:
             x(database)
         app = ProjectsApp(
@@ -139,10 +139,10 @@ class EmailProcessor:
     @staticmethod
     def create_test_instance():
         events = Events()
-        database = Database(
+        database = Database(JsonStore(
             filesystem=events.track(Filesystem.create_null()),
             uuid=UUID.create_null()
-        )
+        ))
         smtp_server = events.track(SMTPServer.create_null())
         processor = EmailProcessor(
             database=database,
@@ -237,25 +237,24 @@ class EmailProcessor:
 
 class DatabaseEntity:
 
-    def __init__(self, filesystem, store, path):
-        self.filesystem = filesystem
+    def __init__(self, store, path):
         self.store = store
         self.path = path
 
 class ProjectEntity(DatabaseEntity):
 
-    def __init__(self, filesystem, store, name):
-        DatabaseEntity.__init__(self, filesystem, store, f"projects/{name}/index.json")
+    def __init__(self, store, name):
+        DatabaseEntity.__init__(self, store, f"projects/{name}/index.json")
         self.name = name
 
     def exists(self):
-        return self.filesystem.exists(self.path)
+        return self.store.exists(os.path.dirname(self.path), "index")
 
     def load(self):
         return self.store.load(self.path)
 
     def create(self):
-        self.filesystem.write(self.path, "{}")
+        self.store.create(os.path.dirname(self.path), {}, "index")
 
     def create_conversation(self, subject, raw_email):
         conversation_id = self.store.create(
@@ -286,18 +285,18 @@ class ProjectEntity(DatabaseEntity):
         return self.store.load(self.path).get("watchers", [])
 
     def conversation(self, conversation_id):
-        return ConversationEntity(self.filesystem, self.store, self.name, conversation_id)
+        return ConversationEntity(self.store, self.name, conversation_id)
 
     def conversation_entry(self, entry_id):
-        return ConversationEntryEntity(self.filesystem, self.store, self.name, entry_id)
+        return ConversationEntryEntity(self.store, self.name, entry_id)
 
     def email(self, email_id):
-        return EmailEntity(self.filesystem, self.store, self.name, email_id)
+        return EmailEntity(self.store, self.name, email_id)
 
 class ConversationEntity(DatabaseEntity):
 
-    def __init__(self, filesystem, store, project_name, conversation_id):
-        DatabaseEntity.__init__(self, filesystem, store, f"projects/{project_name}/conversations/{conversation_id}.json")
+    def __init__(self, store, project_name, conversation_id):
+        DatabaseEntity.__init__(self, store, f"projects/{project_name}/conversations/{conversation_id}.json")
         self.project_name = project_name
         self.id = conversation_id
 
@@ -306,8 +305,8 @@ class ConversationEntity(DatabaseEntity):
 
 class ConversationEntryEntity(DatabaseEntity):
 
-    def __init__(self, filesystem, store, project_name, entry_id):
-        DatabaseEntity.__init__(self, filesystem, store, f"projects/{project_name}/conversations/entries/{entry_id}.json")
+    def __init__(self, store, project_name, entry_id):
+        DatabaseEntity.__init__(self, store, f"projects/{project_name}/conversations/entries/{entry_id}.json")
         self.project_name = project_name
         self.entry_id = entry_id
 
@@ -316,8 +315,8 @@ class ConversationEntryEntity(DatabaseEntity):
 
 class EmailEntity(DatabaseEntity):
 
-    def __init__(self, filesystem, store, project_name, email_id):
-        DatabaseEntity.__init__(self, filesystem, store, f"projects/{project_name}/emails/{email_id}.json")
+    def __init__(self, store, project_name, email_id):
+        DatabaseEntity.__init__(self, store, f"projects/{project_name}/emails/{email_id}.json")
         self.project_name = project_name
         self.email_id = email_id
 
@@ -336,18 +335,20 @@ class EmailEntity(DatabaseEntity):
 
 class Database:
 
-    def __init__(self, filesystem, uuid):
-        self.filesystem = filesystem
-        self.store = JsonStore(filesystem, uuid)
+    def __init__(self, store):
+        self.store = store
 
     def project(self, name):
-        return ProjectEntity(self.filesystem, self.store, name)
+        return ProjectEntity(self.store, name)
 
 class JsonStore:
 
     def __init__(self, filesystem, uuid):
         self.filesystem = filesystem
         self.uuid = uuid
+
+    def exists(self, path, object_id):
+        return self.filesystem.exists(self.path(path, object_id))
 
     def load(self, path):
         return json.loads(self.filesystem.read(path))
@@ -363,10 +364,13 @@ class JsonStore:
         if object_id is None:
             object_id = self.uuid.get()
         self.filesystem.write(
-            os.path.join(path, f"{object_id}.json"),
+            self.path(path, object_id),
             json.dumps(data)
         )
         return object_id
+
+    def path(self, path, object_id):
+        return os.path.join(path, f"{object_id}.json")
 
 class ProjectNotFound(ValueError):
     pass
