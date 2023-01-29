@@ -230,18 +230,10 @@ class EmailProcessor:
             raise ProjectNotFound(project)
         conversation = self.db.project(project).create_conversation(email.get_subject(), raw_email)
         for watcher in self.db.project(project).load().get("watchers", []):
-            notification_new_conversation_from_email(
-                watcher,
-                project,
-                conversation
-            ).send(self.smtp_server)
-
-def notification_new_conversation_from_email(watcher, project, conversation):
-    notification = Email()
-    notification.set_to(watcher)
-    notification.set_from(f"{project}@projects.rickardlindberg.me")
-    notification.set_reply_to(f"{project}+{conversation.id}@projects.rickardlindberg.me")
-    return notification
+            email.set_to(watcher)
+            email.set_from(f"{project}@projects.rickardlindberg.me")
+            email.set_reply_to(f"{project}+{conversation.id}@projects.rickardlindberg.me")
+            email.send(self.smtp_server)
 
 class DatabaseEntity:
 
