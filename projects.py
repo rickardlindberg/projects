@@ -166,6 +166,7 @@ class EmailProcessor:
         >>> raw_email = Email.create_test_instance(
         ...     to_address="timeline@projects.rickardlindberg.me",
         ...     subject="Hello World!",
+        ...     body="hello",
         ... ).render()
         >>> processor.process(raw_email)
 
@@ -174,10 +175,12 @@ class EmailProcessor:
             from: 'timeline@projects.rickardlindberg.me'
             reply-to: 'timeline+uuid3@projects.rickardlindberg.me'
             to: 'watcher1@example.com'
+            body: 'hello\\n'
         EMAIL_SENT =>
             from: 'timeline@projects.rickardlindberg.me'
             reply-to: 'timeline+uuid3@projects.rickardlindberg.me'
             to: 'watcher2@example.com'
+            body: 'hello\\n'
 
         >>> events.filter("FILE_WRITTEN")
         FILE_WRITTEN =>
@@ -230,10 +233,12 @@ class EmailProcessor:
             raise ProjectNotFound(project)
         conversation = self.db.project(project).create_conversation(email.get_subject(), raw_email)
         for watcher in self.db.project(project).load().get("watchers", []):
-            email.set_to(watcher)
-            email.set_from(f"{project}@projects.rickardlindberg.me")
-            email.set_reply_to(f"{project}+{conversation.id}@projects.rickardlindberg.me")
-            email.send(self.smtp_server)
+            notification = Email()
+            notification.copy_plain_text_body_from(email)
+            notification.set_to(watcher)
+            notification.set_from(f"{project}@projects.rickardlindberg.me")
+            notification.set_reply_to(f"{project}+{conversation.id}@projects.rickardlindberg.me")
+            notification.send(self.smtp_server)
 
 class DatabaseEntity:
 
@@ -376,7 +381,7 @@ class Email:
         'user@example.com'
         >>> email.get_to()
         'to@example.com'
-        >>> email.get_body()
+        >>> email.get_plain_text_body()
         'hello\\n'
         >>> email.get_subject()
         'subject'
@@ -384,7 +389,7 @@ class Email:
         email = Email()
         email.set_from(from_address)
         email.set_to(to_address)
-        email.set_body(body)
+        email.set_plain_text_body(body)
         email.set_subject(subject)
         return email
 
@@ -398,7 +403,7 @@ class Email:
         ... ).render())
         >>> email.get_from()
         'test@example.com'
-        >>> email.get_body()
+        >>> email.get_plain_text_body()
         'test\\n'
         >>> email.get_subject()
         'foo'
@@ -460,11 +465,21 @@ class Email:
     def set_reply_to(self, reply_to_address):
         self._set_header("Reply-To", reply_to_address)
 
-    def get_body(self):
+    def get_plain_text_body(self):
         return self.email_message.get_content()
 
-    def set_body(self, body):
+    def set_plain_text_body(self, body):
         self.email_message.set_content(body)
+
+    def copy_plain_text_body_from(self, email):
+        """
+        >>> source = Email.create_test_instance(body="body")
+        >>> target = Email()
+        >>> target.copy_plain_text_body_from(source)
+        >>> target.get_plain_text_body()
+        'body\\n'
+        """
+        self.email_message.set_content(email.email_message.get_content())
 
     def _set_header(self, name, value):
         del self.email_message[name]
@@ -528,6 +543,7 @@ class SMTPServer(Observable):
         from: 'user@example.com'
         reply-to: None
         to: 'to@example.com'
+        body: 'hello\\n'
 
     >>> isinstance(SMTPServer.create(), SMTPServer)
     True
@@ -559,6 +575,7 @@ class SMTPServer(Observable):
                 "from": email["From"],
                 "reply-to": email["Reply-To"],
                 "to": email["To"],
+                "body": email.get_content(),
             })
 
 class UUID:
