@@ -478,8 +478,19 @@ class Email:
         >>> target.copy_plain_text_body_from(source)
         >>> target.get_plain_text_body()
         'body\\n'
+
+        >>> source = Email()
+        >>> target = Email()
+        >>> target.copy_plain_text_body_from(source)
+        >>> target.get_plain_text_body()
+        '<no plain body found>\\n'
         """
-        self.email_message.set_content(email.email_message.get_content())
+        plain_body_part = email.email_message.get_body(["plain"])
+        if plain_body_part:
+            plain_body = plain_body_part.get_content()
+        else:
+            plain_body = "<no plain body found>"
+        self.email_message.set_content(plain_body)
 
     def _set_header(self, name, value):
         del self.email_message[name]
