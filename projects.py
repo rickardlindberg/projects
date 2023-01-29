@@ -173,13 +173,15 @@ class EmailProcessor:
         >>> events.filter("EMAIL_SENT")
         EMAIL_SENT =>
             from: 'timeline@projects.rickardlindberg.me'
-            reply-to: 'timeline+uuid3@projects.rickardlindberg.me'
             to: 'watcher1@example.com'
+            reply-to: 'timeline+uuid3@projects.rickardlindberg.me'
+            subject: 'Hello World!'
             body: 'hello\\n'
         EMAIL_SENT =>
             from: 'timeline@projects.rickardlindberg.me'
-            reply-to: 'timeline+uuid3@projects.rickardlindberg.me'
             to: 'watcher2@example.com'
+            reply-to: 'timeline+uuid3@projects.rickardlindberg.me'
+            subject: 'Hello World!'
             body: 'hello\\n'
 
         >>> events.filter("FILE_WRITTEN")
@@ -235,6 +237,7 @@ class EmailProcessor:
         for watcher in self.db.project(project).load().get("watchers", []):
             notification = Email()
             notification.copy_plain_text_body_from(email)
+            notification.set_subject(email.get_subject())
             notification.set_to(watcher)
             notification.set_from(f"{project}@projects.rickardlindberg.me")
             notification.set_reply_to(f"{project}+{conversation.id}@projects.rickardlindberg.me")
@@ -552,8 +555,9 @@ class SMTPServer(Observable):
     >>> events
     EMAIL_SENT =>
         from: 'user@example.com'
-        reply-to: None
         to: 'to@example.com'
+        reply-to: None
+        subject: 'subject'
         body: 'hello\\n'
 
     >>> isinstance(SMTPServer.create(), SMTPServer)
@@ -584,8 +588,9 @@ class SMTPServer(Observable):
             smtp.send_message(email)
             self.notify("EMAIL_SENT", {
                 "from": email["From"],
-                "reply-to": email["Reply-To"],
                 "to": email["To"],
+                "reply-to": email["Reply-To"],
+                "subject": email["Subject"],
                 "body": email.get_content(),
             })
 
